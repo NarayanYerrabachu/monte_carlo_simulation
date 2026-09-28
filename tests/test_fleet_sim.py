@@ -145,3 +145,25 @@ def test_live_feed_for_the_viewer():
                 "p_breakdowns_over_alert", "breakdown_alert"):
         assert last[key] == pytest.approx(k[key]), key
     assert feed.snapshot(since=150)["series"]["maint_cost"] == snap["series"]["maint_cost"][150:]
+
+
+def test_mapper_graph_for_the_viewer():
+    rows = _records(slow_day=3)
+    n = len(rows["vehicle_id"])
+    slow = [i for i, r in enumerate(rows["regime"]) if r == 1]
+    fast = [i for i, r in enumerate(rows["regime"]) if r == 0]
+    mapper = {"nodes": [{"id": 0, "x": 0, "y": 0, "z": -1, "size": len(fast), "members": fast},
+                        {"id": 7, "x": 1, "y": 1, "z": 1, "size": len(slow), "members": slow + [n + 5]}],
+              "edges": [[0, 7], [0, 99]]}
+    feed = LiveFeed()
+    ctx = RunContext(settings=SimSettings(n_sims=100, seed=7), n_jobs=1, cancel=threading.Event(),
+                     progress=lambda d, t: None, live=feed)
+    run(FleetInput(**rows, mapper=mapper), ctx)
+    snap = feed.snapshot()
+    g = snap["observed"]["graph"]
+    by_id = {nd["id"]: nd for nd in g["nodes"]}
+    assert by_id[7]["size"] == len(slow)                     # out-of-range member dropped
+    assert by_id[7]["on_time"] < 0.6 < by_id[0]["on_time"]    # the slow day's records sit in node 7
+    assert g["edges"] == [[0, 7]]                            # edge to an unknown node dropped
+    assert len(snap["frames"]) >= 1 and snap["frames"][-1]["n"] == 100
+    assert sum(c for _, c in snap["frames"][-1]["nodes"]) == 20   # 20 vehicles, one node each

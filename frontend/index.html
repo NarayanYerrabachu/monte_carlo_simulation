@@ -59,19 +59,19 @@
         <div class="fl-tile"><span class="k">P(day meets SLA)</span><span class="v" id="fl-sla">–</span><span class="s" id="fl-sla-s">&nbsp;</span></div>
       </div>
       <div class="fl-charts">
-        <div class="card"><h3>Vehicle requirement distribution</h3><div class="plot fl-plot" id="fl-vehicles"></div></div>
-        <div class="card"><h3>Delivery outcome (simulation)</h3><div class="plot fl-plot" id="fl-outcome"></div></div>
-        <div class="card"><h3>Maintenance cost distribution</h3><div class="plot fl-plot" id="fl-maint"></div></div>
-        <div class="card"><h3>On-time share per simulated day</h3><div class="plot fl-plot" id="fl-share"></div></div>
+        <div class="card"><div class="card-head"><h3>Vehicle requirement distribution</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="vehicles" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="vehicles" data-mode="3d" aria-pressed="false">3D</button></div></div><p class="hint3d" data-for="vehicles" hidden>3D: the distribution after every 10% of the simulated days — later slices stop changing once the estimate is stable.</p><div class="plot fl-plot" id="fl-vehicles"></div></div>
+        <div class="card"><div class="card-head"><h3 id="fl-outcome-title">Delivery outcome (simulation)</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="outcome" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="outcome" data-mode="3d" aria-pressed="false">3D: vehicles × on-time</button></div></div><p class="hint3d" data-for="outcome" hidden>3D: how often each combination of vehicles required and on-time share occurs — days that need many vehicles are the ones that miss the SLA.</p><div class="plot fl-plot" id="fl-outcome"></div></div>
+        <div class="card"><div class="card-head"><h3>Maintenance cost distribution</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="maint" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="maint" data-mode="3d" aria-pressed="false">3D</button></div></div><p class="hint3d" data-for="maint" hidden>3D: the distribution after every 10% of the simulated days.</p><div class="plot fl-plot" id="fl-maint"></div></div>
+        <div class="card"><div class="card-head"><h3>On-time share per simulated day</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="share" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="share" data-mode="3d" aria-pressed="false">3D</button></div></div><p class="hint3d" data-for="share" hidden>3D: the distribution after every 10% of the simulated days.</p><div class="plot fl-plot" id="fl-share"></div></div>
       </div>
     </section>
 
     <section class="card cloud">
       <div class="card-head">
-        <h2>Fleet records by TDA regime</h2>
+        <h2 id="cloud-title">Fleet records by TDA regime</h2>
         <label class="toggle"><input id="rotate" type="checkbox" checked> rotate</label>
       </div>
-      <p class="hint">Every vehicle-day record, coloured by the regime TDA assigned it. Orange: the vehicles drawn for the simulated day being shown.</p>
+      <p class="hint" id="cloud-hint">Every vehicle-day record, coloured by the regime TDA assigned it. Orange: the vehicles drawn for the simulated day being shown.</p>
       <div id="plot3d" class="plot"></div>
     </section>
   </main>

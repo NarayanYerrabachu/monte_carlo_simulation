@@ -105,7 +105,12 @@ demo's **Open live view** link uses it.
    - KPI tiles: fleet availability, on-time delivery probability, daily fuel cost, breakdown risk and
      P(meet SLA)
    - charts: vehicle requirement, delivery outcome, maintenance cost and on-time share
-   - the records in 3D, coloured by TDA regime, with the vehicles of the day being simulated
+   - **2D / 3D switch** on every chart. In 3D the distributions become waterfalls, showing the
+     distribution after every 10% of the days so you see it settle, and the outcome chart becomes a
+     joint *vehicles required × on-time share* surface
+   - the **TDA Mapper graph in 3D**, laid out like CortXplorer's TDA Mapper (topological spread on
+     x and y, filter height on z). Node size is the number of records and colour is the on-time
+     share; the groups holding the simulated day's vehicles light up during playback
 
    100,000 days compute in a few seconds, so the viewer plays the simulated days back over 15, 30
    or 60 seconds (the **Animation** setting), with **Pause** and **Replay**. It shows how many days

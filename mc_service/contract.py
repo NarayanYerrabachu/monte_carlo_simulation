@@ -185,6 +185,9 @@ class FleetInput(_Model):
     breakdown_alert: int | None = Field(None, ge=0)        # report P(breakdowns > alert); default: P90
     exclude_anomalies_above: float | None = Field(0.6, ge=0, le=1)
     context: dict[str, Any] | None = None                  # TDA / ML findings from the sender, shown with the result
+    # TDA Mapper graph with its 3D layout: {"nodes": [{id, size, x, y, z, members: [record positions]}],
+    # "edges": [[source, target], ...]} — drawn by the live viewer
+    mapper: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _check(self):

@@ -24,6 +24,7 @@ class LiveFeed:
     def __init__(self) -> None:
         self.observed: dict[str, Any] | None = None   # static: observed points + marker values
         self.frame: dict[str, Any] | None = None      # latest surrogate the null was computed on
+        self.frames: list[dict[str, Any]] = []        # every frame, for playback (small: node / point ids)
         self.null: list[float] = []                   # null statistic per completed simulation
         self.series: dict[str, list] = {}             # per-simulation values (fleet: one entry per metric)
         self.checkpoints: list[dict[str, Any]] = []   # running KPIs, computed server-side after each chunk
@@ -37,6 +38,7 @@ class LiveFeed:
 
     def set_frame(self, **payload: Any) -> None:
         self.frame = to_jsonable(payload)
+        self.frames.append(self.frame)
 
     def add_null(self, values: list[float]) -> None:
         self.null.extend(to_jsonable(values))
@@ -72,5 +74,6 @@ class LiveFeed:
             "n_null": len(null),
             "series": {k: v[since:len(null)] for k, v in self.series.items()},
             "checkpoints": self.checkpoints[:],
+            "frames": self.frames[:],
             "running": self.running(),
         }

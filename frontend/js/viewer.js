@@ -50,8 +50,70 @@ function cloudTrace(points, name, color, opacity, size) {
   };
 }
 
-function render3d() {
+// TDA Mapper graph in 3D, laid out exactly like CortXplorer's TDA Mapper view:
+// topological spread on x / y, filter height (lens) on z. Node size = records,
+// colour = on-time share of the node's deliveries (from the data). Orange marks
+// the groups holding the vehicles of the simulated day currently shown.
+function renderMapper3d(frame) {
+  const g = state.observed.graph;
+  const byId = new Map(g.nodes.map((nd) => [nd.id, nd]));
+  const maxSize = Math.max(...g.nodes.map((nd) => nd.size));
+  const ex = [], ey = [], ez = [];
+  for (const [a, b] of g.edges) {
+    const p = byId.get(a), q = byId.get(b);
+    if (!p || !q) continue;
+    ex.push(p.x, q.x, null); ey.push(p.y, q.y, null); ez.push(p.z, q.z, null);
+  }
+  const radius = (size) => 3 + 20 * Math.sqrt(size / maxSize);
+  const traces = [
+    { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: cssVar("--muted"), width: 1.5 },
+      hoverinfo: "skip", name: "shared records", showlegend: false },
+    { type: "scatter3d", mode: "markers", name: "Mapper groups",
+      x: g.nodes.map((nd) => nd.x), y: g.nodes.map((nd) => nd.y), z: g.nodes.map((nd) => nd.z),
+      marker: { size: g.nodes.map((nd) => radius(nd.size)), color: g.nodes.map((nd) => nd.on_time), cmin: 0, cmax: 1,
+                colorscale: [[0, "#d03b3b"], [0.6, "#f59e0b"], [0.9, "#8bc34a"], [1, "#15803d"]], opacity: 0.85,
+                line: { width: 0 }, colorbar: { title: { text: "on-time", side: "right" }, tickformat: ".0%", len: 0.6, thickness: 10 } },
+      text: g.nodes.map((nd) => `group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)}`),
+      hovertemplate: "%{text}<extra></extra>" },
+  ];
+  if (frame && frame.nodes && frame.nodes.length) {
+    const hit = frame.nodes.map(([id, c]) => [byId.get(id), c]).filter(([nd]) => nd);
+    traces.push({ type: "scatter3d", mode: "markers", name: `Vehicles of a simulated day (${frame.day})`,
+      x: hit.map(([nd]) => nd.x), y: hit.map(([nd]) => nd.y), z: hit.map(([nd]) => nd.z),
+      marker: { size: hit.map(([nd]) => radius(nd.size) + 6), color: cssVar("--surrogate"), opacity: 0.55,
+                line: { color: cssVar("--surrogate"), width: 2 } },
+      text: hit.map(([nd, c]) => `${c} vehicle${c === 1 ? "" : "s"} of this day in group ${nd.id}`),
+      hovertemplate: "%{text}<extra></extra>" });
+  }
+  const muted = cssVar("--muted"), grid = cssVar("--line");
+  const axis = (t) => ({ showbackground: false, gridcolor: grid, zerolinecolor: grid, color: muted, title: { text: t } });
+  Plotly.react("plot3d", traces, {
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 12 },
+    margin: { l: 0, r: 0, t: 8, b: 30 }, showlegend: true,
+    legend: { orientation: "h", x: 0, y: 0, yanchor: "top", bgcolor: "rgba(0,0,0,0)", font: { size: 11 } },
+    scene: { xaxis: axis("← Topological spread →"), yaxis: axis("← Topological spread →"),
+             zaxis: axis("Filter height (how different from average)"), aspectmode: "cube", camera: { eye: eyeXYZ() } },
+    uirevision: "keep",
+  }, { displaylogo: false, responsive: true });
+  state.plotReady = true;
+}
+
+function frameAt(n) {
+  let best = null;
+  for (const f of state.frames || []) if ((f.n || f.index + 1) <= n) best = f;
+  return best || state.frame;
+}
+
+function render3d(frame = state.frame) {
   const obs = state.observed;
+  if (obs && obs.graph) {
+    if (state.shownFrame === frame && state.plotReady) return;
+    state.shownFrame = frame;
+    $("cloud-title").textContent = "TDA Mapper — 3D shape of the fleet data";
+    $("cloud-hint").textContent = `${int(obs.graph.nodes.length)} Mapper groups of similar vehicle-days (size = records, colour = on-time share of their deliveries), linked where they share records. Orange: the groups holding the vehicles of the simulated day being shown.`;
+    renderMapper3d(frame);
+    return;
+  }
   if (!obs || !obs.groups) return;
   const ids = [...new Set(obs.groups)].sort((a, b) => a - b);
   const traces = ids.map((g, i) => cloudTrace(obs.points.filter((_, k) => obs.groups[k] === g),
@@ -102,14 +164,127 @@ function histogram(id, key, color, xTitle, lines, xfmt) {
   }, { displaylogo: false, responsive: true });
 }
 
+// ── 3D views ────────────────────────────────────────────────────────────────
+// Waterfall: the distribution after every 10 % of the simulated days (depth), so
+// it can be seen growing and settling. Joint: vehicles required × on-time share.
+// Bin counts are updated incrementally as days are revealed (no re-counting).
+const view3d = { vehicles: false, outcome: false, maint: false, share: false };
+const PLOT_ID = { vehicles: "fl-vehicles", outcome: "fl-outcome", maint: "fl-maint", share: "fl-share" };
+const inc = {};
+let frameNo = 0;
+
+function binSpec(key, target = 30) {
+  const all = fl.series[key] || [];
+  if (!all.length) return null;
+  let lo = Infinity, hi = -Infinity, whole = true;
+  for (const v of all) { if (v < lo) lo = v; if (v > hi) hi = v; if (whole && !Number.isInteger(v)) whole = false; }
+  const size = hi > lo ? (whole ? Math.max(1, Math.ceil((hi - lo) / (target + 10))) : (hi - lo) / target) : 1;
+  return { lo, size, nb: Math.floor((hi - lo) / size) + 1 };
+}
+
+const binOf = (sp, v) => Math.min(sp.nb - 1, Math.max(0, Math.floor((v - sp.lo) / sp.size)));
+const mids = (sp) => Array.from({ length: sp.nb }, (_, i) => sp.lo + (i + 0.5) * sp.size);
+
+function countsFor(key) {
+  const sp = binSpec(key);
+  if (!sp) return null;
+  const sig = `${sp.lo}|${sp.size}|${sp.nb}`;
+  let st = inc[key];
+  if (!st || st.sig !== sig || fl.revealed < st.upto) {
+    st = inc[key] = { sig, sp, counts: new Float64Array(sp.nb), upto: 0, slices: [] };
+  }
+  const vals = fl.series[key];
+  const every = Math.max(1, Math.round((fl.total || vals.length) / 10));
+  for (let i = st.upto; i < fl.revealed; i++) {
+    const v = vals[i];
+    if (v != null && Number.isFinite(v)) st.counts[binOf(sp, v)] += 1;
+    if ((i + 1) % every === 0) st.slices.push({ n: i + 1, p: Array.from(st.counts, (c) => c / (i + 1)) });
+  }
+  st.upto = fl.revealed;
+  return st;
+}
+
+function scene(xTitle, yTitle, zTitle, xfmt, yfmt) {
+  const muted = cssVar("--muted"), grid = cssVar("--line");
+  const ax = (t, fmt) => ({ title: { text: t }, gridcolor: grid, zerolinecolor: grid, color: muted, showbackground: false, tickformat: fmt || "" });
+  return { xaxis: ax(xTitle, xfmt), yaxis: ax(yTitle, yfmt), zaxis: ax(zTitle, ".0%"),
+           camera: { eye: { x: 1.55, y: -1.55, z: 0.95 } }, aspectmode: "manual", aspectratio: { x: 1.4, y: 1.2, z: 0.7 } };
+}
+
+function surfaceLayout(sc) {
+  return { paper_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 11 },
+           margin: { l: 0, r: 0, t: 0, b: 0 }, scene: sc, uirevision: "3d", showlegend: false };
+}
+
+function waterfall(id, key, color, xTitle, xfmt) {
+  const st = countsFor(key);
+  if (!st) return;
+  const rows = [{ n: 0, p: new Array(st.sp.nb).fill(0) }, ...st.slices];
+  if (st.upto && (!st.slices.length || st.slices[st.slices.length - 1].n !== st.upto)) {
+    rows.push({ n: st.upto, p: Array.from(st.counts, (c) => c / st.upto) });
+  }
+  Plotly.react(id, [{
+    type: "surface", x: mids(st.sp), y: rows.map((r) => r.n), z: rows.map((r) => r.p),
+    colorscale: [[0, cssVar("--panel")], [1, color]], showscale: false, opacity: 0.95,
+    contours: { y: { show: true, color: cssVar("--line"), width: 1 } },
+    hovertemplate: "%{x:,.2f} after %{y:,} days: %{z:.1%}<extra></extra>",
+  }], surfaceLayout(scene(xTitle, "simulated days", "probability", xfmt)), { displaylogo: false, responsive: true });
+}
+
+function joint(id) {
+  const sv = binSpec("vehicles_required", 18), ss = binSpec("share", 18);   // coarser grid: a readable surface
+  if (!sv || !ss) return;
+  const sig = `${sv.lo}|${sv.size}|${sv.nb}|${ss.lo}|${ss.size}|${ss.nb}`;
+  let st = inc.joint;
+  if (!st || st.sig !== sig || fl.revealed < st.upto) {
+    st = inc.joint = { sig, counts: Array.from({ length: ss.nb }, () => new Float64Array(sv.nb)), upto: 0 };
+  }
+  const V = fl.series.vehicles_required, S = fl.series.share;
+  for (let i = st.upto; i < fl.revealed; i++) {
+    if (Number.isFinite(V[i]) && Number.isFinite(S[i])) st.counts[binOf(ss, S[i])][binOf(sv, V[i])] += 1;
+  }
+  st.upto = fl.revealed;
+  const n = Math.max(1, st.upto), obs = state.observed || {};
+  const x = mids(sv), y = mids(ss);
+  const traces = [{
+    type: "surface", x, y, z: st.counts.map((row) => Array.from(row, (c) => c / n)),
+    colorscale: [[0, cssVar("--panel")], [0.35, cssVar("--surrogate")], [1, cssVar("--bad")]], showscale: false,
+    hovertemplate: "%{x:,.0f} vehicles, %{y:.1%} on time: %{z:.2%}<extra></extra>",
+  }];
+  if (obs.stat != null) {                                  // the SLA as a line on the floor
+    traces.push({ type: "scatter3d", mode: "lines", x: [x[0], x[x.length - 1]], y: [obs.stat, obs.stat], z: [0, 0],
+                  line: { color: cssVar("--observed"), width: 6 }, hoverinfo: "skip", name: obs.stat_label || "SLA" });
+  }
+  Plotly.react(id, traces, surfaceLayout(scene("vehicles required", "on-time share", "probability", "", ".0%")),
+               { displaylogo: false, responsive: true });
+}
+
+function setView(chart, is3d) {
+  view3d[chart] = is3d;
+  document.querySelectorAll(`.seg button[data-chart="${chart}"]`).forEach((b) => {
+    b.setAttribute("aria-pressed", String((b.dataset.mode === "3d") === is3d));
+  });
+  const hint = document.querySelector(`.hint3d[data-for="${chart}"]`);
+  if (hint) hint.hidden = !is3d;
+  if (chart === "outcome") $("fl-outcome-title").textContent = is3d ? "Vehicles required × on-time share" : "Delivery outcome (simulation)";
+  const el = $(PLOT_ID[chart]);
+  Plotly.purge(el);
+  el.classList.toggle("is3d", is3d);
+  try { localStorage.setItem("mc-view3d", JSON.stringify(view3d)); } catch { /* storage unavailable */ }
+  renderDashboard(true);
+}
+
 function checkpointAt(n) {
   let best = null;
   for (const c of fl.checkpoints) if (c.n <= n) best = c;
   return best || fl.checkpoints[0] || null;
 }
 
-function renderDashboard() {
+function renderDashboard(force3d = false) {
   const n = fl.revealed, obs = state.observed || {};
+  frameNo += 1;
+  const received = (fl.series.share || []).length;
+  const draw3d = force3d || frameNo % 3 === 0 || n >= received;       // 3D redraws at a third of the rate
   const ck = checkpointAt(n);
   const playing = fl.done && n < (fl.series.share || []).length;
   $("fl-progress").textContent = `· ${int(n)} / ${int(fl.total)} simulated days` +
@@ -126,17 +301,22 @@ function renderDashboard() {
   $("fl-sla-s").textContent = obs.stat_label ? `${obs.stat_label} of deliveries on time` : "";
 
   const warm = cssVar("--surrogate"), bad = cssVar("--bad"), good = cssVar("--good"), blue = cssVar("--observed");
-  histogram("fl-vehicles", "vehicles_required", blue, "number of vehicles", [
+  if (view3d.vehicles) { if (draw3d) waterfall("fl-vehicles", "vehicles_required", blue, "number of vehicles"); }
+  else histogram("fl-vehicles", "vehicles_required", blue, "number of vehicles", [
     vline(ck.vehicles_required_mean, warm, `expected ${int(ck.vehicles_required_mean)}`, 0),
     vline(ck.vehicles_required_p95, bad, `P95 ${int(ck.vehicles_required_p95)}`, 1),
     ...(obs.headline != null ? [vline(obs.headline, good, `fleet ${obs.headline}`, 2)] : []),
   ]);
-  histogram("fl-maint", "maint_cost", good, "daily maintenance cost (€)", [
+  if (view3d.maint) { if (draw3d) waterfall("fl-maint", "maint_cost", good, "daily maintenance cost (€)"); }
+  else histogram("fl-maint", "maint_cost", good, "daily maintenance cost (€)", [
     vline(ck.maint_cost_mean, warm, `expected €${int(ck.maint_cost_mean)}`, 0),
     vline(ck.maint_cost_p95, bad, `P95 €${int(ck.maint_cost_p95)}`, 1),
   ]);
-  histogram("fl-share", "share", warm, "on-time share of the day",
+  if (view3d.share) { if (draw3d) waterfall("fl-share", "share", warm, "on-time share of the day", ".0%"); }
+  else histogram("fl-share", "share", warm, "on-time share of the day",
     obs.stat != null ? [vline(obs.stat, blue, obs.stat_label || "SLA", 0)] : [], ".0%");
+  if (draw3d) render3d(frameAt(n));                           // Mapper: groups of the day being shown
+  if (view3d.outcome) { if (draw3d) joint("fl-outcome"); return; }
   const on = ck.on_time_share_mean;
   Plotly.react("fl-outcome", [{ type: "pie", hole: 0.55, sort: false, labels: ["On time", "Delayed"],
       values: [on, 1 - on], marker: { colors: [good, bad] }, textinfo: "percent",
@@ -181,8 +361,9 @@ function finish() {
 // ── polling ─────────────────────────────────────────────────────────────────
 function resetView() {
   clearInterval(fl.timer);
+  Object.keys(inc).forEach((k) => delete inc[k]);
   Object.assign(fl, { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false, paused: false });
-  Object.assign(state, { received: 0, observed: null, frame: null, status: null, plotReady: false });
+  Object.assign(state, { received: 0, observed: null, frame: null, frames: [], shownFrame: null, status: null, plotReady: false });
   ["fl-vehicles", "fl-outcome", "fl-maint", "fl-share", "plot3d"].forEach((id) => Plotly.purge(id));
   ["fl-avail", "fl-ontime", "fl-fuel", "fl-break", "fl-sla"].forEach((id) => { $(id).textContent = "–"; });
   $("fl-report").hidden = true;
@@ -219,7 +400,8 @@ async function poll(generation) {
     fl.checkpoints = feed.checkpoints || fl.checkpoints;
     fl.total = p.total || fl.total;
     state.frame = feed.frame;
-    render3d();
+    state.frames = feed.frames || state.frames;
+    if (!fl.revealed) render3d();
     if (ACTIVE.includes(view.status)) {
       if (!fl.timer && state.received) startReveal();
       schedule(generation);
@@ -305,6 +487,13 @@ async function init() {
     $("fl-report").hidden = true;
     startReveal();
   });
+  document.querySelectorAll(".seg button").forEach((b) => {
+    b.addEventListener("click", () => setView(b.dataset.chart, b.dataset.mode === "3d"));
+  });
+  try {
+    const saved = JSON.parse(localStorage.getItem("mc-view3d") || "null");
+    if (saved) Object.entries(saved).forEach(([k, v]) => { if (k in view3d && v) setView(k, true); });
+  } catch { /* storage unavailable */ }
   $("fl-pause").addEventListener("click", () => {
     fl.paused = !fl.paused;
     $("fl-pause").textContent = fl.paused ? "Resume" : "Pause";

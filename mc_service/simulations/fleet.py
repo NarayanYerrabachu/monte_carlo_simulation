@@ -84,6 +84,28 @@ def _spread(x: np.ndarray) -> dict[str, float] | None:
     return {"p5": float(p5), "median": float(med), "p95": float(p95)}
 
 
+def _mapper_graph(mapper: dict | None, n: int, on_time: np.ndarray, planned: np.ndarray,
+                  breakdown: np.ndarray, operating: np.ndarray) -> tuple[dict | None, dict[int, list[int]]]:
+    """The sender's Mapper graph for the 3D view, with each node's record statistics, and the
+    record → nodes index used to show where a simulated day's vehicles sit in the shape."""
+    if not mapper or not mapper.get("nodes"):
+        return None, {}
+    nodes, record_nodes = [], {}
+    for nd in mapper["nodes"]:
+        m = np.array([r for r in nd.get("members", []) if 0 <= r < n], dtype=int)
+        if m.size == 0:
+            continue
+        for r in m:
+            record_nodes.setdefault(int(r), []).append(int(nd["id"]))
+        pl = planned[m].sum()
+        nodes.append({"id": int(nd["id"]), "x": nd["x"], "y": nd["y"], "z": nd["z"], "size": int(m.size),
+                      "on_time": float(on_time[m].sum() / pl) if pl else None,
+                      "breakdown_rate": float(breakdown[m].mean()), "availability": float(operating[m].mean())})
+    ids = {nd["id"] for nd in nodes}
+    edges = [[int(a), int(b)] for a, b in mapper.get("edges", []) if a in ids and b in ids]
+    return {"nodes": nodes, "edges": edges}, record_nodes
+
+
 def observed_inputs(dates: np.ndarray, planned: np.ndarray, breakdown: np.ndarray, driver: np.ndarray,
                     fuel: np.ndarray, distance: np.ndarray, duration: np.ndarray, price: np.ndarray,
                     maint: np.ndarray, vehicles: int) -> dict[str, Any]:
@@ -160,8 +182,9 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
     axes = np.column_stack([arr(getattr(s, a)) for a in VIZ_AXES])[viz]
     labels = {str(r): (s.regime_labels or {}).get(str(r)) or ("Noise / outliers" if r == -1 else f"Cluster {r}")
               for r in sorted(set(regime.tolist()))}
+    graph, record_nodes = _mapper_graph(s.mapper, n, on_time, planned, breakdown, operating)
     ctx.live.set_observed(
-        stat=s.sla_on_time, alpha=ctx.settings.alpha, mode="share_at_least",
+        stat=s.sla_on_time, alpha=ctx.settings.alpha, mode="share_at_least", graph=graph,
         points=np.round(axes, 3), groups=regime[viz], group_labels=labels, axis_titles=list(VIZ_AXIS_TITLES),
         statistic="on-time share of the simulated day", stat_label=f"SLA {s.sla_on_time:.0%}",
         band_label=f"{ctx.settings.alpha:.0%} worst days", running_label="P(meet SLA)",
@@ -201,7 +224,12 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
         d = int(rng.integers(len(by_day)))
         pick = rng.choice(by_day[d], size=fleet)
         shown = sorted({viz_pos[int(r)] for r in pick if int(r) in viz_pos})
-        ctx.live.set_frame(index=i, day=str(dates[by_day[d][0]]), highlight=shown,
+        nodes: dict[int, int] = {}                    # Mapper node → vehicles of this day in it
+        for r in pick:
+            for k in record_nodes.get(int(r), ()):
+                nodes[k] = nodes.get(k, 0) + 1
+        ctx.live.set_frame(index=i, n=i + 1, day=str(dates[by_day[d][0]]), highlight=shown,
+                           nodes=[[k, c] for k, c in sorted(nodes.items())],
                            on_time_share=float(draws[-1, served_col] / draws[-1, demand_col]))
 
     res = simulate(draw, ctx.sim_config(chunk_size=max(1, ctx.settings.n_sims // 100), on_chunk=on_chunk))
