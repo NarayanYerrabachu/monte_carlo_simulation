@@ -1,3 +1,4 @@
+import base64
 import io
 
 import pytest
@@ -48,30 +49,48 @@ def test_simulate_backlog_zero_with_huge_fleet():
 
 
 def test_report_json_endpoint(client):
-    r = client.get(f"/v1/reports/fleet?n={N}&seed=1")
-    assert r.status_code == 200
+    r = client.post("/v1/reports/fleet", json={"n": N, "seed": 1})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/json"
     d = r.json()["data"]
     assert d["n"] == N and d["seed"] == 1 and d["kpi"] == build_report(N, 1).data["kpi"]
 
 
-def test_report_rejects_bad_params(client):
-    r = client.get("/v1/reports/fleet?n=10")
-    assert r.status_code == 422 and r.json()["status"] == "error"
+@pytest.mark.parametrize("body, fragment", [
+    ({"n": 10}, "n"),
+    ({"n": N, "seed": -1}, "seed"),
+    ({"n": N, "colour": "red"}, "colour"),          # unknown fields are rejected
+])
+def test_report_rejects_bad_json(client, body, fragment):
+    r = client.post("/v1/reports/fleet", json=body)
+    assert r.status_code == 422
+    assert r.json()["status"] == "error" and fragment in r.json()["message"]
 
 
-def test_pdf_download(client):
-    r = client.get(f"/v1/reports/fleet.pdf?n={N}&seed=1")
-    assert r.status_code == 200
-    assert r.headers["content-type"] == "application/pdf"
-    assert f'filename="fleet-monte-carlo-{N}-seed1.pdf"' in r.headers["content-disposition"]
-    assert r.content.startswith(b"%PDF") and len(r.content) > 50_000
+def test_report_defaults_from_empty_json(client):
+    d = client.post("/v1/reports/fleet", json={}).json()["data"]
+    assert d["n"] == 10_000 and d["seed"] == 42
 
 
-def test_excel_download(client):
-    r = client.get(f"/v1/reports/fleet.xlsx?n={N}&seed=1")
-    assert r.status_code == 200
-    assert "spreadsheetml" in r.headers["content-type"]
-    wb = load_workbook(io.BytesIO(r.content))
+def _file(client, kind):
+    r = client.post(f"/v1/reports/fleet/{kind}", json={"n": N, "seed": 1})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/json"
+    f = r.json()["data"]
+    content = base64.b64decode(f["content"])
+    assert f["encoding"] == "base64" and f["size_bytes"] == len(content)
+    assert f["filename"] == f"fleet-monte-carlo-{N}-seed1.{kind}"
+    return f, content
+
+
+def test_pdf_as_json(client):
+    f, content = _file(client, "pdf")
+    assert f["content_type"] == "application/pdf"
+    assert content.startswith(b"%PDF") and len(content) > 50_000
+
+
+def test_excel_as_json(client):
+    f, content = _file(client, "xlsx")
+    assert "spreadsheetml" in f["content_type"]
+    wb = load_workbook(io.BytesIO(content))
     assert wb.sheetnames == ["Summary", "Inputs", "Distributions", "Drivers", "Fleet sizing", "Convergence", "Scenarios"]
     assert wb["Scenarios"].max_row == N + 1
     k = build_report(N, 1).data["kpi"]
@@ -83,3 +102,11 @@ def test_report_page_and_viewer_link(client):
     page = client.get("/report")
     assert page.status_code == 200 and "Download PDF" in page.text and "Download Excel" in page.text
     assert 'href="/report"' in client.get("/").text
+
+
+def test_frontend_assets_served(client):
+    page = client.get("/report").text
+    assert "/js/fleet_report.js" in page and "/css/fleet_report.css" in page
+    for path in ("/js/fleet_report.js", "/css/fleet_report.css", "/js/viewer.js", "/css/viewer.css"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path

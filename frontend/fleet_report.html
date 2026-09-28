@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fleet Risk Simulation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/css/fleet_report.css">
+</head>
+<body>
+<div class="page">
+  <div class="toolbar">
+    <a class="btn" href="/">← Live viewer</a>
+    <span class="spacer"></span>
+    <label class="field">Scenarios<input id="in-n" type="number" min="1000" max="50000" step="1000" value="10000"></label>
+    <label class="field">Seed<input id="in-seed" type="number" min="0" value="42"></label>
+    <button id="run" class="btn primary" type="button">Run report</button>
+    <button id="dl-pdf" class="btn" type="button" disabled>Download PDF</button>
+    <button id="dl-xlsx" class="btn" type="button" disabled>Download Excel</button>
+  </div>
+  <div id="error" class="error" hidden></div>
+  <div id="status" class="status" hidden></div>
+  <header class="hero">
+    <span class="eyebrow">Fleet management · Risk analysis</span>
+    <h1>Monte Carlo Simulation in Fleet Management</h1>
+    <p class="lede">How likely is an operating day without delays, how many vehicles does the fleet really need, and which costs must the budget cover? Instead of a single point estimate, this report runs through 10,000 possible operating days.</p>
+    <div class="meta">
+      <span><b id="m-n"></b> simulated operating days</span>
+      <span>Seed <b id="m-seed"></b> (reproducible)</span>
+      <span>Generated <b id="m-date"></b></span>
+      <span>Inputs: ranges from the brief, plus marked assumptions</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="h-summary">
+    <div class="section-head">
+      <span class="eyebrow">Summary</span>
+      <h2 id="h-summary">Key results</h2>
+    </div>
+    <div class="findings" id="findings"></div>
+  </section>
+
+  <section aria-labelledby="h-model">
+    <div class="section-head">
+      <span class="eyebrow">Model</span>
+      <h2 id="h-model">Uncertain inputs</h2>
+      <p>Every input is drawn at random from its range in each scenario. <span class="tag given">Brief</span> values come from the fleet-management brief. <span class="tag assumed">Assumption</span> values are plausible placeholders, to be replaced with telematics, ERP or workshop data for a real customer.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input</th><th>Distribution</th><th>Range</th><th>Source</th></tr></thead>
+        <tbody id="inputs"></tbody>
+      </table>
+    </div>
+    <div class="section-head">
+      <h3>How one operating day is calculated</h3>
+      <ol class="steps">
+        <li>Vehicles in service = available vehicles − breakdowns, capped by the drivers present.</li>
+        <li>Capacity per vehicle = (480 min − traffic delay) ÷ time per delivery.</li>
+        <li>Daily capacity against demand gives the backlog, the share of on-time deliveries and the vehicles required.</li>
+        <li>Distance × consumption × price gives fuel cost; breakdowns × (duration × rate + parts) give maintenance cost; the backlog gives overtime.</li>
+      </ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-service">
+    <div class="section-head">
+      <span class="eyebrow">Result 1</span>
+      <h2 id="h-service">On-time delivery and vehicle requirement</h2>
+      <p id="service-text"></p>
+    </div>
+    <div class="chart-card wide">
+      <h3>How many deliveries does the fleet complete within the shift?</h3>
+      <p class="note">Share of simulated operating days by on-time delivery level</p>
+      <div class="stack" id="service-stack" role="img" aria-label="Operating days by on-time delivery level"></div>
+      <div class="stack-labels" id="service-labels"></div>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Vehicles required</h3>
+        <p class="note">Vehicles needed to complete every delivery within the shift</p>
+        <div class="chart" id="c-vreq"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Backlog at end of shift</h3>
+        <p class="note">Deliveries that need overtime or move to the next day</p>
+        <div class="chart" id="c-backlog"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-cost">
+    <div class="section-head">
+      <span class="eyebrow">Result 2</span>
+      <h2 id="h-cost">Variable daily cost</h2>
+      <p id="cost-text"></p>
+    </div>
+    <div class="chart-card wide">
+      <h3>Average composition</h3>
+      <div class="stack" id="cost-stack" role="img" aria-label="Average variable daily cost by cost type"></div>
+      <div class="stack-labels" id="cost-labels"></div>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Variable cost per operating day</h3>
+        <p class="note">Fuel, maintenance and overtime combined</p>
+        <div class="chart" id="c-total"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Maintenance cost per operating day</h3>
+        <p class="note">Workshop time and parts for the day's breakdowns</p>
+        <div class="chart" id="c-maint"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Vehicle breakdowns per day</h3>
+        <p class="note">Number of vehicles that break down on a day</p>
+        <div class="chart" id="c-break"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Fuel consumption per day</h3>
+        <p class="note">Litres of diesel for the whole fleet</p>
+        <div class="chart" id="c-fuel"></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-drivers">
+    <div class="section-head">
+      <span class="eyebrow">Result 3</span>
+      <h2 id="h-drivers">What drives the risk</h2>
+      <p>Rank correlation (Spearman ρ) of each input with the share of late deliveries and with daily cost. Values near 0 mean this uncertainty hardly affects the outcome.</p>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3>Drivers of late deliveries</h3>
+        <div class="chart" id="c-sens-short"></div>
+      </div>
+      <div class="chart-card">
+        <h3>Drivers of daily cost</h3>
+        <div class="chart" id="c-sens-cost"></div>
+      </div>
+    </div>
+    <div class="legend"><span><i style="background:var(--s2)"></i>increases lateness or cost</span><span><i style="background:var(--s1)"></i>reduces lateness or cost</span></div>
+  </section>
+
+  <section aria-labelledby="h-sizing">
+    <div class="section-head">
+      <span class="eyebrow">What-if</span>
+      <h2 id="h-sizing">Fleet size and driver capacity</h2>
+      <p id="sizing-text"></p>
+    </div>
+    <div class="chart-card wide">
+      <h3>Probability of a fully on-time operating day</h3>
+      <div class="legend"><span><i class="line" style="background:var(--s1)"></i>Driver pool stays at 520</span><span><i class="line" style="background:var(--s2)"></i>Driver pool grows with the fleet (1.1 drivers per vehicle)</span></div>
+      <div class="chart" id="c-sizing"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-conv">
+    <div class="section-head">
+      <span class="eyebrow">Quality</span>
+      <h2 id="h-conv">Are 10,000 scenarios enough?</h2>
+      <p id="conv-text"></p>
+    </div>
+    <div class="chart-card wide">
+      <h3>Estimate as the number of scenarios grows</h3>
+      <div class="legend"><span><i class="line" style="background:var(--s1)"></i>Share of fully on-time days</span><span><i style="background:color-mix(in srgb, var(--s1) 22%, transparent)"></i>95% confidence interval</span></div>
+      <div class="chart" id="c-conv"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-recs">
+    <div class="section-head">
+      <span class="eyebrow">Decisions</span>
+      <h2 id="h-recs">Recommendations</h2>
+      <p>Ordered by their effect on on-time delivery and cost.</p>
+    </div>
+    <div class="recs" id="recs"></div>
+  </section>
+
+  <section aria-labelledby="h-limits">
+    <div class="section-head">
+      <span class="eyebrow">Context</span>
+      <h2 id="h-limits">Limitations and next steps</h2>
+    </div>
+    <div class="limits">
+      <div>
+        <h3>Model limitations</h3>
+        <ul id="limitations"></ul>
+      </div>
+      <div>
+        <h3>Next steps</h3>
+        <ul id="next-steps"></ul>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Generated by the Monte Carlo service (<code>mc_service/fleet</code>). This page, the PDF and the Excel file come from the same run, so every number matches.</span>
+    <span>Monte Carlo method: each scenario redraws every uncertain input. Probabilities are shares of scenarios; percentiles refer to the distribution across all scenarios.</span>
+  </footer>
+</div>
+
+
+<script src="/js/fleet_report.js"></script>
+</body>
+</html>

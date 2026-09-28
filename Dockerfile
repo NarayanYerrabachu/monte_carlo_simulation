@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir pipenv \
     && pip uninstall -y pipenv
 
 COPY mc_service/ ./mc_service/
+COPY frontend/ ./frontend/
 
 ENV MPLCONFIGDIR=/tmp/matplotlib
 

@@ -37,12 +37,24 @@ pipenv run uvicorn mc_service.main:app --host 0.0.0.0 --port 8020 --reload
 pipenv run pytest -q
 ```
 
+Layout: `mc_service/` is Python only (API, simulations, PDF/Excel builders). All HTML, JS and CSS
+live in `frontend/` (`index.html` = live viewer, `fleet_report.html` = report; assets in `frontend/js`
+and `frontend/css`). The service serves them from there (`MC_FRONTEND_DIR` overrides the path).
+
 Dependencies live in `Pipfile` / `Pipfile.lock` only. The Docker build installs with `--deploy`, so run
 `pipenv lock` after editing the Pipfile.
 
 ## API
 
-Every response uses the envelope `{status, data, message}`, the same as the demo.
+**Requests and responses are JSON.** Requests that carry data send a JSON body; the GET endpoints
+only take the job id in the path (plus `since` on the live feed). Every response is the
+`{status, data, message}` envelope, the same as the demo. A generated file is returned inside
+`data` like this:
+
+```json
+{"filename": "fleet-monte-carlo-10000-seed42.pdf", "content_type": "application/pdf",
+ "encoding": "base64", "size_bytes": 465720, "content": "JVBERi0xLjQK…"}
+```
 
 | Method | Path | |
 |---|---|---|
@@ -55,9 +67,9 @@ Every response uses the envelope `{status, data, message}`, the same as the demo
 | `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
 | `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
 | `GET` | `/report` | **Fleet report** page, with PDF and Excel download buttons |
-| `GET` | `/v1/reports/fleet?n=10000&seed=42` | Fleet-management Monte Carlo results as JSON (numbers and texts) |
-| `GET` | `/v1/reports/fleet.pdf?n=…&seed=…` | Same report as a PDF (A4) |
-| `GET` | `/v1/reports/fleet.xlsx?n=…&seed=…` | Same report as Excel: summary, inputs, distributions, drivers, fleet sizing, convergence, all scenarios |
+| `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
+| `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
+| `POST` | `/v1/reports/fleet/xlsx` | Same body. Returns the report as Excel, inside the JSON (base64): summary, inputs, distributions, drivers, fleet sizing, convergence, all scenarios |
 
 The request format is defined in [mc_service/contract.py](mc_service/contract.py) (`contract_version` "1").
 Configuration is in [.env.example](.env.example).
@@ -89,7 +101,8 @@ assumptions. The report covers:
 - convergence of the estimate, and recommendations
 
 Open **Fleet report** in the live viewer (or go to http://localhost:8020/report). Set the number of
-scenarios and the seed, click **Run report**, then **Download PDF** or **Download Excel**. All three
+scenarios and the seed, click **Run report**, then **Download PDF** or **Download Excel**. The page
+decodes the base64 file from the JSON response into a download. All three
 formats come from the same cached run (`build_report(n, seed)`), so their numbers and texts are
 identical, and the same seed always gives the same report.
 

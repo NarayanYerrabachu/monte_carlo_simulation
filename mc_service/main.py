@@ -5,6 +5,7 @@ Run:  pipenv run uvicorn mc_service.main:app --host 0.0.0.0 --port 8020
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,7 +24,8 @@ from mc_service.jobs import JobStore
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 config = ServiceConfig.from_env()
-STATIC_DIR = Path(__file__).parent / "static"
+# HTML / JS / CSS live in the repo's frontend/ folder (Python returns JSON or files only)
+FRONTEND_DIR = Path(os.getenv("MC_FRONTEND_DIR", Path(__file__).resolve().parents[1] / "frontend"))
 
 
 class NoCacheStatic(StaticFiles):
@@ -48,19 +50,20 @@ install_error_handlers(app)
 app.add_middleware(BodyLimitMiddleware, max_bytes=config.max_body_bytes)
 app.include_router(jobs_api.router)
 app.include_router(reports_api.router)
-app.mount("/static", NoCacheStatic(directory=STATIC_DIR), name="static")
+app.mount("/js", NoCacheStatic(directory=FRONTEND_DIR / "js"), name="js")
+app.mount("/css", NoCacheStatic(directory=FRONTEND_DIR / "css"), name="css")
 
 
 @app.get("/", include_in_schema=False)
 def viewer():
     """Live viewer (static page; all rendering happens in the browser)."""
-    return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/report", include_in_schema=False)
 def fleet_report_page():
     """Fleet-management report (static page; renders /v1/reports/fleet, links the PDF and Excel)."""
-    return FileResponse(STATIC_DIR / "fleet_report.html", headers={"Cache-Control": "no-cache"})
+    return FileResponse(FRONTEND_DIR / "fleet_report.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health")

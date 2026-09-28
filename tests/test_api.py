@@ -206,5 +206,5 @@ def test_viewer_page_served(client):
     r = client.get("/")
     assert r.status_code == 200 and "text/html" in r.headers["content-type"]
     assert "viewer.js" in r.text
-    js = client.get("/static/viewer.js")
+    js = client.get("/js/viewer.js")
     assert js.status_code == 200 and js.headers["cache-control"] == "no-cache"
