@@ -66,7 +66,7 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/v1/jobs` | All jobs, newest first |
 | `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
 | `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
-| `GET` | `/report` | **Fleet report** page, with PDF and Excel download buttons |
+| `GET` | `/report` | **Report** page, with PDF and Excel download buttons |
 | `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
 | `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
 | `POST` | `/v1/reports/fleet/xlsx` | Same body. Returns the report as Excel, inside the JSON (base64): summary, inputs, distributions, drivers, fleet sizing, convergence, all scenarios |
@@ -100,7 +100,7 @@ assumptions. The report covers:
 - a what-if for fleet size vs. driver pool
 - convergence of the estimate, and recommendations
 
-Open **Fleet report** in the live viewer (or go to http://localhost:8020/report). Set the number of
+Open **Report** in the live viewer (or go to http://localhost:8020/report). Set the number of
 scenarios and the seed, click **Run report**, then **Download PDF** or **Download Excel**. The page
 decodes the base64 file from the JSON response into a download. All three
 formats come from the same cached run (`build_report(n, seed)`), so their numbers and texts are
