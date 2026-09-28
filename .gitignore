@@ -1,0 +1,13 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+montecarlo/
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.log
+.idea/
+.ruff_cache/
