@@ -29,10 +29,13 @@ from typing import Any
 import numpy as np
 
 from mc_service.contract import FleetInput
-from mc_service.engine import percentile_ci, simulate
+from mc_service.engine import percentile_ci, simulate, spawn_seeds
 from mc_service.simulations.base import RunContext
 
 HIST_BINS = 30
+VIZ_MAX_POINTS = 3000         # records drawn in the live viewer's 3D cloud
+VIZ_AXES = ("route_duration_h", "fuel_l", "deliveries_on_time")
+VIZ_AXIS_TITLES = ("route duration (h)", "fuel (L)", "on-time deliveries")
 # columns of the per-simulation result vector
 COLS = ("demand", "on_time", "within_target", "breakdowns", "operating", "fuel_l", "fuel_cost",
         "maint_cost", "vehicles_required")
@@ -134,6 +137,11 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
     # demand of each historical day, per vehicle of the data (robust to excluded records)
     day_demand = [float(planned[ix].mean()) * vehicles_in_data for ix in by_day]
     stats = np.column_stack([on_time, within, breakdown, operating, fuel, fuel_cost, maint])
+    if s.breakdown_alert is not None:
+        alert = s.breakdown_alert
+    else:                                   # P90 of historical daily breakdowns, scaled to the fleet
+        hist_daily = np.array([breakdown[ix].sum() * vehicles_in_data / ix.size for ix in by_day])
+        alert = math.ceil(float(np.percentile(hist_daily, 90)) * fleet / vehicles_in_data)
 
     def draw(rng: np.random.Generator) -> np.ndarray:
         d = int(rng.integers(len(by_day)))
@@ -145,14 +153,61 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
         v_req = math.ceil(demand / per_vehicle) if per_vehicle > 0 else np.nan
         return np.array([demand, served, within_t, *tot[2:], v_req])
 
-    res = simulate(draw, ctx.sim_config(chunk_size=max(1, ctx.settings.n_sims // 50)))
+    # ── live viewer: records in 3D coloured by TDA regime; each simulated day highlights its vehicles
+    viz = np.arange(n) if n <= VIZ_MAX_POINTS else np.sort(
+        np.random.default_rng(ctx.settings.seed).choice(n, VIZ_MAX_POINTS, replace=False))
+    viz_pos = {int(r): i for i, r in enumerate(viz)}
+    axes = np.column_stack([arr(getattr(s, a)) for a in VIZ_AXES])[viz]
+    labels = {str(r): (s.regime_labels or {}).get(str(r)) or ("Noise / outliers" if r == -1 else f"Cluster {r}")
+              for r in sorted(set(regime.tolist()))}
+    ctx.live.set_observed(
+        stat=s.sla_on_time, alpha=ctx.settings.alpha, mode="share_at_least",
+        points=np.round(axes, 3), groups=regime[viz], group_labels=labels, axis_titles=list(VIZ_AXIS_TITLES),
+        statistic="on-time share of the simulated day", stat_label=f"SLA {s.sla_on_time:.0%}",
+        band_label=f"{ctx.settings.alpha:.0%} worst days", running_label="P(meet SLA)",
+        headline_label="Fleet size", headline=fleet)
+    seeds = spawn_seeds(ctx.settings.seed, ctx.settings.n_sims)
+
+    done: list[np.ndarray] = []                          # all draws so far, for the running KPIs
+
+    def on_chunk(lo: int, draws: np.ndarray) -> None:
+        demand_col, served_col = COLS.index("demand"), COLS.index("on_time")
+        col = {c: draws[:, i] for i, c in enumerate(COLS)}
+        ctx.live.add_series({
+            "vehicles_required": col["vehicles_required"].tolist(), "maint_cost": col["maint_cost"].tolist(),
+            "fuel_l": col["fuel_l"].tolist(), "breakdowns": col["breakdowns"].tolist(),
+            "within_share": (col["within_target"] / col["demand"]).tolist(),
+        })
+        ctx.live.add_null((draws[:, served_col] / draws[:, demand_col]).tolist())
+        done.append(draws)
+        a = np.concatenate(done)
+        c = {k: a[:, i] for i, k in enumerate(COLS)}
+        share = c["on_time"] / c["demand"]
+        ctx.live.add_checkpoint({
+            "n": len(a), "p_meet_sla": float((share >= s.sla_on_time).mean()),
+            "on_time_share_mean": float(share.mean()),
+            "p_delivery_within_target": float((c["within_target"] / c["demand"]).mean()),
+            "fleet_availability_mean": float((c["operating"] / fleet).mean()),
+            "fuel_cost_mean": float(c["fuel_cost"].mean()), "fuel_l_mean": float(c["fuel_l"].mean()),
+            "breakdown_alert": alert, "p_breakdowns_over_alert": float((c["breakdowns"] > alert).mean()),
+            "vehicles_required_mean": float(np.nanmean(c["vehicles_required"])),
+            "vehicles_required_p95": float(np.nanpercentile(c["vehicles_required"], 95)),
+            "maint_cost_mean": float(c["maint_cost"].mean()), "maint_cost_p95": float(np.percentile(c["maint_cost"], 95)),
+        })
+        i = lo + len(draws) - 1                         # rebuild the day simulation i drew
+        rng = np.random.default_rng(seeds[i])
+        d = int(rng.integers(len(by_day)))
+        pick = rng.choice(by_day[d], size=fleet)
+        shown = sorted({viz_pos[int(r)] for r in pick if int(r) in viz_pos})
+        ctx.live.set_frame(index=i, day=str(dates[by_day[d][0]]), highlight=shown,
+                           on_time_share=float(draws[-1, served_col] / draws[-1, demand_col]))
+
+    res = simulate(draw, ctx.sim_config(chunk_size=max(1, ctx.settings.n_sims // 100), on_chunk=on_chunk))
     sim = {c: res.null[:, i] for i, c in enumerate(COLS)}
     share_on_time = sim["on_time"] / sim["demand"]
     share_within = sim["within_target"] / sim["demand"]
     meets = share_on_time >= s.sla_on_time
     availability = sim["operating"] / fleet
-    alert = s.breakdown_alert if s.breakdown_alert is not None else math.ceil(float(np.percentile(sim["breakdowns"], 90)))
-    ctx.live.add_null(share_on_time.tolist())
 
     k = np.arange(1, res.n_completed + 1)
     run_p = np.cumsum(meets) / k

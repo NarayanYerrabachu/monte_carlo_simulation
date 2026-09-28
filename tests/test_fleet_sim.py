@@ -123,3 +123,25 @@ def test_observed_inputs():
     assert inp["fuel_l_per_100km"]["median"] == pytest.approx(8.0)
     assert inp["driver_availability"]["median"] == pytest.approx(1.0)
     assert inp["maintenance_cost_per_breakdown"]["median"] == pytest.approx(900.0)
+
+
+def test_live_feed_for_the_viewer():
+    feed = LiveFeed()
+    ctx = RunContext(settings=SimSettings(n_sims=200, seed=7), n_jobs=1, cancel=threading.Event(),
+                     progress=lambda d, t: None, live=feed)
+    res = to_jsonable(run(FleetInput(**_records(slow_day=3)), ctx))
+    snap = feed.snapshot()
+    obs = snap["observed"]
+    assert obs["mode"] == "share_at_least" and obs["stat"] == 0.95
+    assert len(obs["points"]) == 200 and len(obs["groups"]) == 200 and set(obs["group_labels"]) == {"0", "1"}
+    assert snap["n_null"] == 200
+    assert snap["running"]["share_at_least"] == pytest.approx(res["summary"]["kpi"]["p_meet_sla"])
+    assert snap["frame"]["index"] == 199 and 0 < len(snap["frame"]["highlight"]) <= 20
+    # per-day series for the live charts, and server-computed running KPIs that end at the final result
+    assert all(len(v) == 200 for v in snap["series"].values())
+    last, k = snap["checkpoints"][-1], res["summary"]["kpi"]
+    assert last["n"] == 200
+    for key in ("p_meet_sla", "fleet_availability_mean", "maint_cost_mean", "vehicles_required_p95",
+                "p_breakdowns_over_alert", "breakdown_alert"):
+        assert last[key] == pytest.approx(k[key]), key
+    assert feed.snapshot(since=150)["series"]["maint_cost"] == snap["series"]["maint_cost"][150:]

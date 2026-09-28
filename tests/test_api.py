@@ -244,3 +244,32 @@ def test_rerun_rejects_non_fleet_jobs(client, fake_loops):
     r = client.post(f"/v1/jobs/{job_id}/rerun", json={"fleet": {"fleet_size": 5}})
     assert r.status_code == 409 and "only fleet jobs" in r.json()["message"]
     assert client.post(f"/v1/jobs/{job_id}/rerun", json={"fleet": {"colour": 1}}).status_code == 422
+
+
+@pytest.mark.parametrize("fmt, magic", [("pdf", b"%PDF"), ("xlsx", b"PK")])
+def test_job_report_files(client, fmt, magic):
+    import base64
+
+    from tests.test_fleet_sim import _records
+    req = {"contract_version": "1", "dataset_id": "fleet-ds", "settings": {"n_sims": 100, "seed": 1},
+           "fleet": {**_records(slow_day=2), "context": {"n_clusters": 2, "relationships": ["A ↔ B"]}}}
+    job_id = data(client.post("/v1/jobs", json=req))["job_id"]
+    assert _wait(client, job_id)["status"] == "done"
+    f = data(client.post("/v1/reports/job", json={"job_id": job_id, "format": fmt}))
+    content = base64.b64decode(f["content"])
+    assert content.startswith(magic) and f["size_bytes"] == len(content) and f["filename"].endswith(f".{fmt}")
+    j = data(client.post("/v1/reports/job", json={"job_id": job_id}))
+    assert j["kind"] == "fleet" and j["result"]["fleet"]["summary"]["kpi"]["fleet_size"] == 20
+
+
+def test_job_report_for_loops_and_errors(client):
+    import base64
+    rng = np.random.default_rng(0)
+    t = rng.uniform(0, 2 * np.pi, 300)
+    X = np.column_stack([np.cos(t), np.sin(t), rng.normal(scale=0.05, size=300)]).tolist()
+    job_id = data(client.post("/v1/jobs", json=_loops_request(loops={"X": X, "sample_n": 150},
+                                                              settings={"n_sims": 19})))["job_id"]
+    assert _wait(client, job_id)["status"] == "done"
+    pdf = base64.b64decode(data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "pdf"}))["content"])
+    assert pdf.startswith(b"%PDF")
+    assert client.post("/v1/reports/job", json={"job_id": "nope"}).status_code == 404

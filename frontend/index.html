@@ -13,8 +13,8 @@
       <span class="dot" id="health-dot"></span>
       <h1>Monte Carlo <span class="muted">· live</span></h1>
       <span class="chip" id="health">connecting…</span>
-      <a class="report-link" href="/fleet">Fleet</a>
-      <a class="report-link" href="/report">Report</a>
+      <a class="report-link" href="/fleet">Job reports</a>
+      <a class="report-link" href="/report">Assumption report</a>
     </div>
     <div class="controls">
       <label class="field">
@@ -40,35 +40,63 @@
 
   <div id="error" class="error" hidden></div>
 
-  <main class="grid">
+  <main class="grid" id="main-grid">
+    <!-- Fleet jobs: the sample dashboard, filled day by day while the simulation runs (or replays) -->
+    <section class="fleet-live" id="fleet-live" hidden>
+      <div class="live-head">
+        <h2>Fleet simulation <span class="muted" id="fl-progress">–</span></h2>
+        <div class="live-actions">
+          <button id="fl-replay" class="ghost" type="button" disabled>Replay</button>
+          <a id="fl-report" class="report-cta" hidden>Generate report ↗</a>
+        </div>
+      </div>
+      <div class="fl-tiles">
+        <div class="fl-tile"><span class="k">Fleet availability</span><span class="v good-ink" id="fl-avail">–</span><span class="s">vehicles with driver, no breakdown</span></div>
+        <div class="fl-tile"><span class="k" id="fl-ontime-k">On-time delivery (probability)</span><span class="v accent-ink" id="fl-ontime">–</span><span class="s" id="fl-ontime-s">deliveries within the target</span></div>
+        <div class="fl-tile"><span class="k">Expected daily fuel cost</span><span class="v warm-ink" id="fl-fuel">–</span><span class="s" id="fl-fuel-s">&nbsp;</span></div>
+        <div class="fl-tile"><span class="k">Breakdown risk</span><span class="v bad-ink" id="fl-break">–</span><span class="s" id="fl-break-s">&nbsp;</span></div>
+        <div class="fl-tile"><span class="k">P(day meets SLA)</span><span class="v" id="fl-sla">–</span><span class="s" id="fl-sla-s">&nbsp;</span></div>
+      </div>
+      <div class="fl-charts">
+        <div class="card"><h3>Vehicle requirement distribution</h3><div class="plot fl-plot" id="fl-vehicles"></div></div>
+        <div class="card"><h3>Delivery outcome (simulation)</h3><div class="plot fl-plot" id="fl-outcome"></div></div>
+        <div class="card"><h3>Maintenance cost distribution</h3><div class="plot fl-plot" id="fl-maint"></div></div>
+        <div class="card"><h3>On-time share per simulated day</h3><div class="plot fl-plot" id="fl-share"></div></div>
+      </div>
+    </section>
+
     <section class="card cloud">
       <div class="card-head">
-        <h2>Data vs. random surrogate</h2>
+        <h2 id="cloud-title">Data vs. random surrogate</h2>
         <label class="toggle"><input id="rotate" type="checkbox" checked> rotate</label>
       </div>
-      <p class="hint">Observed points (blue) and the structureless surrogate the current simulation ran on (orange).</p>
+      <p class="hint" id="cloud-hint">Observed points (blue) and the structureless surrogate the current simulation ran on (orange).</p>
       <div id="plot3d" class="plot"></div>
     </section>
 
     <section class="side">
       <div class="stats">
         <div class="stat"><span class="label">Simulations</span><span class="value" id="st-n">–</span></div>
-        <div class="stat"><span class="label">Running p-value</span><span class="value" id="st-p">–</span></div>
-        <div class="stat"><span class="label">Noise band</span><span class="value" id="st-band">–</span></div>
-        <div class="stat"><span class="label">Longest loop</span><span class="value" id="st-top">–</span></div>
+        <div class="stat"><span class="label" id="lbl-p">Running p-value</span><span class="value" id="st-p">–</span></div>
+        <div class="stat"><span class="label" id="lbl-band">Noise band</span><span class="value" id="st-band">–</span></div>
+        <div class="stat"><span class="label" id="lbl-top">Longest loop</span><span class="value" id="st-top">–</span></div>
       </div>
       <div class="progress"><div id="progress-bar"></div></div>
       <div class="status-line" id="status-line">Pick a job or run a synthetic simulation.</div>
 
       <section class="card hist">
-        <div class="card-head"><h2>Null distribution <span class="muted" id="hist-sub"></span></h2></div>
+        <div class="card-head"><h2><span id="hist-title">Null distribution</span> <span class="muted" id="hist-sub"></span></h2></div>
         <div id="plothist" class="plot"></div>
       </section>
     </section>
 
     <section class="card table-card">
-      <div class="card-head"><h2>Loops <span class="muted" id="verdict"></span></h2></div>
-      <div class="table-wrap">
+      <div class="card-head">
+        <h2><span id="table-title">Loops</span> <span class="muted" id="verdict"></span></h2>
+        <a id="report-btn" class="report-cta" hidden>Generate report ↗</a>
+      </div>
+      <div id="fleet-summary" class="fleet-summary" hidden></div>
+      <div class="table-wrap" id="loops-wrap">
         <table id="loops-table">
           <thead><tr><th>#</th><th>Birth</th><th>Death</th><th>Persistence</th><th>p-value</th><th>Verdict</th></tr></thead>
           <tbody><tr><td colspan="6" class="muted">Results appear when the job finishes.</td></tr></tbody>

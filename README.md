@@ -72,8 +72,10 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/v1/jobs` | All jobs, newest first |
 | `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
 | `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
-| `GET` | `/fleet?job=<id>` | **Fleet dashboard** for a fleet job sent by CortXplorer, with what-if re-runs |
-| `GET` | `/report` | **Report** page, with PDF and Excel download buttons |
+| `GET` | `/?job=<id>` | **Live viewer**: CortXplorer's Monte Carlo ↗ lands here. Fleet jobs play as a live dashboard; loop jobs show the 3D surrogate view |
+| `GET` | `/report?job=<id>` | **Job report**: HTML view of a finished job, with Download PDF / Excel and what-if re-runs (`/fleet?job=` is the same page) |
+| `POST` | `/v1/reports/job` | `{"job_id": "…", "format": "json" \| "pdf" \| "xlsx"}`: the report of a finished job; files come back as base64 in the JSON |
+| `GET` | `/report` | Assumption-based fleet report (no job), with PDF and Excel download buttons |
 | `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
 | `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
 | `POST` | `/v1/reports/fleet/xlsx` | Same body. Returns the report as Excel, inside the JSON (base64): summary, inputs, distributions, drivers, fleet sizing, convergence, all scenarios |
@@ -95,11 +97,22 @@ noisy circle, a correlated blob or two rings) and then shows live:
 Jobs the demo submits show up in the job picker too. `/?job=<id>` opens a specific job; the
 demo's **Open live view** link uses it.
 
-## Fleet dashboard (data from CortXplorer)
+## Flow: CortXplorer → live viewer → report
 
-In CortXplorer, load a fleet table and press **Monte Carlo ↗**. CortXplorer sends the records, each
-record's TDA regime and ML anomaly score, plus the TDA/ML findings. The job opens at
-`/fleet?job=<id>` and shows:
+1. In CortXplorer, load a fleet table and press **Monte Carlo ↗**. CortXplorer sends the records,
+   each record's TDA regime and ML anomaly score, plus the TDA/ML findings.
+2. The job lands in the **live viewer** (`/?job=<id>`). The sample dashboard fills up day by day:
+   - KPI tiles: fleet availability, on-time delivery probability, daily fuel cost, breakdown risk and
+     P(meet SLA)
+   - charts: vehicle requirement, delivery outcome, maintenance cost and on-time share
+   - the records in 3D, coloured by TDA regime, with the vehicles of the day being simulated
+
+   10,000 days compute in under a second, so the viewer replays them over a few seconds; it says so,
+   and **Replay** repeats it. The tiles and lines always show the server's running KPIs.
+3. When it is done, **Generate report ↗** opens `/report?job=<id>`, the full report, with
+   **Download PDF** and **Download Excel** (built by `mc_service/job_report.py`).
+
+The job report shows:
 
 - the observed inputs
 - the probabilistic outputs (SLA probability, vehicles required with P95, fuel, breakdown risk,

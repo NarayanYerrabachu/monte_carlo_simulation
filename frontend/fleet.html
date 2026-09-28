@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Fleet Monte Carlo</title>
+  <title>Monte Carlo Report</title>
   <link rel="stylesheet" href="/css/fleet.css">
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
@@ -11,17 +11,21 @@
   <header class="bar">
     <div class="brand">
       <span class="dot" id="health-dot"></span>
-      <h1>Monte Carlo <span class="muted">· fleet</span></h1>
+      <h1>Monte Carlo <span class="muted">· report</span></h1>
       <nav class="nav">
-        <a href="/">Live viewer</a>
-        <a href="/fleet" aria-current="page">Fleet</a>
-        <a href="/report">Report</a>
+        <a href="/" id="nav-live">Live viewer</a>
+        <a href="/fleet" aria-current="page">Job report</a>
+        <a href="/report">Assumption report</a>
       </nav>
     </div>
-    <label class="field">
-      <span>Fleet job</span>
-      <select id="job-select"><option value="">— no fleet jobs yet —</option></select>
-    </label>
+    <div class="toolbar">
+      <label class="field">
+        <span>Job</span>
+        <select id="job-select"><option value="">— no finished jobs yet —</option></select>
+      </label>
+      <button id="dl-pdf" type="button" disabled>Download PDF</button>
+      <button id="dl-xlsx" type="button" disabled>Download Excel</button>
+    </div>
   </header>
 
   <main class="page">
@@ -32,8 +36,15 @@
     </div>
 
     <div id="empty" class="notice" hidden>
-      No fleet simulation yet. In CortXplorer, load a fleet table (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. The result opens here.
+      No finished simulation yet. In CortXplorer, load a dataset (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. It runs in the live viewer; when it is done, <b>Generate report ↗</b> opens it here.
     </div>
+
+    <section class="card" id="loops-report" hidden>
+      <h3 id="loops-title">Are the loops real?</h3>
+      <p class="note" id="loops-sub"></p>
+      <div class="chart" id="c-loops"></div>
+      <div class="table-wrap"><table id="loops-table"></table></div>
+    </section>
     <div id="error" class="error" hidden></div>
 
     <section class="card" id="whatif" hidden>

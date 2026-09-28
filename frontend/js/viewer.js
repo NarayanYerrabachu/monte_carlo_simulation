@@ -10,6 +10,7 @@ const $ = (id) => document.getElementById(id);
 const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 
 const state = {
+  test: "loops",     // "loops" | "fleet" — which live feed the job has
   jobId: null,
   null: [],          // null statistic per simulation, in order
   observed: null,    // {stat, alpha, points, heuristic_threshold, statistic}
@@ -84,7 +85,7 @@ function synthetic(shape, n = 1200) {
 function baseLayout() {
   const ink = cssVar("--muted");
   const grid = cssVar("--line");
-  const axis = { showbackground: false, gridcolor: grid, zerolinecolor: grid, color: ink, title: { text: "" } };
+  const axis = () => ({ showbackground: false, gridcolor: grid, zerolinecolor: grid, color: ink, title: { text: "" } });
   return {
     paper_bgcolor: "rgba(0,0,0,0)",
     plot_bgcolor: "rgba(0,0,0,0)",
@@ -92,7 +93,7 @@ function baseLayout() {
     margin: { l: 0, r: 0, t: 8, b: 0 },
     showlegend: true,
     legend: { orientation: "h", x: 0, y: 1.02, bgcolor: "rgba(0,0,0,0)" },
-    scene: { xaxis: axis, yaxis: axis, zaxis: axis, aspectmode: "data", camera: { eye: eyeXYZ() } },
+    scene: { xaxis: axis(), yaxis: axis(), zaxis: axis(), aspectmode: "data", camera: { eye: eyeXYZ() } },
     uirevision: "keep",
   };
 }
@@ -106,15 +107,49 @@ function cloudTrace(points, name, color, opacity) {
   };
 }
 
+// Categorical colours for TDA regimes (fixed order); highlight = the day being simulated
+const REGIME_COLORS = ["#2a78d6", "#1baf7a", "#e87ba4", "#4a3aa7", "#008300", "#eda100", "#e34948", "#8a8f98"];
+
+function regimeTraces(obs, frame) {
+  const pts = obs.points, groups = obs.groups;
+  const ids = [...new Set(groups)].sort((a, b) => a - b);
+  const traces = ids.map((g, i) => {
+    const sel = pts.filter((_, k) => groups[k] === g);
+    const name = (obs.group_labels && obs.group_labels[String(g)]) || `Regime ${g}`;
+    const t = cloudTrace(sel, name, g === -1 ? "#8a8f98" : REGIME_COLORS[i % (REGIME_COLORS.length - 1)], 0.35);
+    t.marker.size = 2.4;
+    return t;
+  });
+  if (frame && frame.highlight) {
+    const hi = frame.highlight.map((k) => pts[k]);
+    const t = cloudTrace(hi, `Vehicles of simulated day ${frame.index + 1} (${frame.day})`, cssVar("--surrogate"), 0.95);
+    t.marker.size = 5;
+    traces.push(t);
+  }
+  return traces;
+}
+
 function render3d() {
-  const traces = [];
-  if (state.observed) traces.push(cloudTrace(state.observed.points, "Observed data", cssVar("--observed"), 0.85));
-  if (state.frame) {
-    traces.push(cloudTrace(state.frame.points, `Surrogate · simulation ${state.frame.index + 1}`,
-      cssVar("--surrogate"), 0.55));
+  const obs = state.observed;
+  let traces = [];
+  if (obs && obs.groups) {
+    traces = regimeTraces(obs, state.frame);
+  } else {
+    if (obs) traces.push(cloudTrace(obs.points, "Observed data", cssVar("--observed"), 0.85));
+    if (state.frame && state.frame.points) {
+      traces.push(cloudTrace(state.frame.points, `Surrogate · simulation ${state.frame.index + 1}`,
+        cssVar("--surrogate"), 0.55));
+    }
   }
   if (!traces.length) return;
-  Plotly.react("plot3d", traces, baseLayout(), { displaylogo: false, responsive: true });
+  const layout = baseLayout();
+  if (obs && obs.axis_titles) {
+    ["xaxis", "yaxis", "zaxis"].forEach((a, i) => { layout.scene[a].title = { text: obs.axis_titles[i] }; });
+    layout.scene.aspectmode = "cube";
+    layout.legend = { orientation: "h", x: 0, y: 0, yanchor: "top", bgcolor: "rgba(0,0,0,0)", font: { size: 11 } };
+    layout.margin = { l: 0, r: 0, t: 8, b: 70 };
+  }
+  Plotly.react("plot3d", traces, layout, { displaylogo: false, responsive: true });
   state.plotReady = true;
 }
 
@@ -131,9 +166,10 @@ function renderHist() {
   const grid = cssVar("--line");
   const lines = [];
   const obs = state.observed;
-  if (obs && obs.stat !== null) lines.push(vline(obs.stat, cssVar("--observed"), "solid", "observed"));
+  if (obs && obs.stat !== null) lines.push(vline(obs.stat, cssVar("--observed"), "solid", obs.stat_label || "observed"));
   if (state.running && state.running.noise_band !== null) {
-    lines.push(vline(state.running.noise_band, cssVar("--band"), "dash", `${Math.round((1 - obs.alpha) * 100)}% band`));
+    lines.push(vline(state.running.noise_band, cssVar("--band"), "dash",
+      obs.band_label || `${Math.round((1 - obs.alpha) * 100)}% band`));
   }
   if (obs && obs.heuristic_threshold !== null && obs.heuristic_threshold !== undefined) {
     lines.push(vline(obs.heuristic_threshold, muted, "dot", "heuristic"));
@@ -159,18 +195,32 @@ function renderHist() {
 }
 
 function renderStats(view) {
-  const prog = (view.progress && view.progress.loops) || { done: 0, total: 0 };
+  const prog = (view.progress && view.progress[state.test]) || { done: 0, total: 0 };
   $("st-n").textContent = prog.total ? `${prog.done} / ${prog.total}` : "–";
   $("progress-bar").style.width = prog.total ? `${(100 * prog.done) / prog.total}%` : "0";
 
   const r = state.running || {};
-  const alpha = state.observed ? state.observed.alpha : 0.05;
+  const obs = state.observed || {};
+  const alpha = obs.alpha != null ? obs.alpha : 0.05;
   const pEl = $("st-p");
-  pEl.textContent = fmtP(r.p_value);
   const finished = !ACTIVE.includes(view.status);
-  pEl.className = "value" + (!finished || r.p_value === null || r.p_value === undefined ? "" : r.p_value <= alpha ? " good" : " bad");
-  $("st-band").textContent = fmt(r.noise_band);
-  $("st-top").textContent = fmt(state.observed && state.observed.stat);
+  if (obs.mode === "share_at_least") {                // fleet: P(day meets the SLA)
+    $("lbl-p").textContent = obs.running_label || "P(meet target)";
+    $("lbl-band").textContent = obs.band_label || "Worst days";
+    $("lbl-top").textContent = obs.headline_label || "Target";
+    pEl.textContent = r.share_at_least == null ? "–" : `${(r.share_at_least * 100).toFixed(1)}%`;
+    pEl.className = "value" + (!finished || r.share_at_least == null ? "" : r.share_at_least >= 0.9 ? " good" : " bad");
+    $("st-band").textContent = r.noise_band == null ? "–" : `${(r.noise_band * 100).toFixed(1)}%`;
+    $("st-top").textContent = obs.headline == null ? "–" : String(obs.headline);
+  } else {
+    $("lbl-p").textContent = "Running p-value";
+    $("lbl-band").textContent = "Noise band";
+    $("lbl-top").textContent = "Longest loop";
+    pEl.textContent = fmtP(r.p_value);
+    pEl.className = "value" + (!finished || r.p_value === null || r.p_value === undefined ? "" : r.p_value <= alpha ? " good" : " bad");
+    $("st-band").textContent = fmt(r.noise_band);
+    $("st-top").textContent = fmt(obs.stat);
+  }
   $("hist-sub").textContent = r.n ? `· ${r.n} simulations` : "";
 
   const errs = Object.entries(view.errors || {}).map(([t, e]) => `${t}: ${e}`).join(" · ");
@@ -206,8 +256,169 @@ function renderTable(loops, emptyText = "No loop result for this job.") {
 }
 
 // ── Polling ─────────────────────────────────────────────────────────────────
+// ── Fleet: the sample dashboard, filled day by day ─────────────────────────
+// The service streams every simulated day's values and running KPIs (computed
+// server-side at each checkpoint). A fast run is replayed over a few seconds so
+// the distributions can be seen building up; tiles and lines always show the
+// server's KPI for the number of days revealed so far.
+const REVEAL_STEPS = 80, REVEAL_MS = 90;
+const fl = { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false };
+
+function resetFleet() {
+  clearInterval(fl.timer);
+  Object.assign(fl, { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false });
+  $("fl-report").hidden = true;
+  $("fl-replay").disabled = true;
+  ["fl-vehicles", "fl-outcome", "fl-maint", "fl-share"].forEach((id) => Plotly.purge(id));
+}
+
+function flReceive(feed, total) {
+  for (const [k, v] of Object.entries(feed.series || {})) (fl.series[k] = fl.series[k] || []).push(...v);
+  fl.series.share = (fl.series.share || []).concat(feed.null || []);
+  fl.checkpoints = feed.checkpoints || fl.checkpoints;
+  fl.total = total || fl.total;
+  if (!fl.timer && fl.revealed < (fl.series.share || []).length) startReveal();
+}
+
+function startReveal() {
+  clearInterval(fl.timer);
+  const step = Math.max(1, Math.ceil((fl.total || 1) / REVEAL_STEPS));
+  fl.timer = setInterval(() => {
+    const received = (fl.series.share || []).length;
+    fl.revealed = Math.min(received, fl.revealed + step);
+    renderFleetLive();
+    if (fl.revealed >= received) {
+      clearInterval(fl.timer);
+      fl.timer = null;
+      if (fl.done) finishFleet();
+    }
+  }, REVEAL_MS);
+}
+
+function finishFleet() {
+  $("fl-replay").disabled = false;
+  const btn = $("fl-report");
+  btn.href = `/report?job=${encodeURIComponent(state.jobId)}`;
+  btn.hidden = false;
+}
+
+function checkpointAt(n) {
+  let best = null;
+  for (const c of fl.checkpoints) if (c.n <= n) best = c;
+  return best || fl.checkpoints[0] || null;
+}
+
+function flHist(id, values, color, xTitle, lines, xfmt) {
+  const all = values.all.filter((v) => v != null && Number.isFinite(v));
+  const shown = values.shown.filter((v) => v != null && Number.isFinite(v));
+  if (!all.length) return;
+  const lo = Math.min(...all), hi = Math.max(...all);
+  const whole = all.every((v) => Number.isInteger(v));      // counts: one bar per value (or per even step)
+  const size = hi > lo ? (whole ? Math.max(1, Math.ceil((hi - lo) / 40)) : (hi - lo) / 30) : 1;
+  const muted = cssVar("--muted"), grid = cssVar("--line");
+  Plotly.react(id, [{ type: "histogram", x: shown, histnorm: "probability", autobinx: false,
+      xbins: { start: lo, end: hi + size, size }, marker: { color, opacity: 0.85 },
+      hovertemplate: "%{x}: %{y:.1%}<extra></extra>" }], {
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 11 },
+    margin: { l: 44, r: 10, t: 26, b: 38 }, bargap: 0.05, showlegend: false,
+    xaxis: { title: { text: xTitle, font: { size: 11, color: muted } }, gridcolor: grid, zeroline: false, color: muted,
+             range: [lo - size, hi + 2 * size], tickformat: xfmt || "" },
+    yaxis: { title: { text: "probability", font: { size: 11, color: muted } }, gridcolor: grid, zeroline: false, color: muted, tickformat: ".0%" },
+    shapes: lines.map((l) => l.shape), annotations: lines.map((l) => l.note), uirevision: id,
+  }, { displaylogo: false, responsive: true });
+}
+
+function flLine(x, color, label, row) {
+  const l = vline(x, color, "dash", label);
+  l.note.y = 1 - row * 0.1;
+  l.note.xanchor = "left";
+  l.note.xshift = 4;
+  return l;
+}
+
+function renderFleetLive() {
+  const n = fl.revealed, obs = state.observed || {};
+  const ck = checkpointAt(n);
+  const pct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
+  const int = (v) => (v == null ? "–" : Math.round(v).toLocaleString("en-GB"));
+  $("fl-progress").textContent = `· ${int(n)} / ${int(fl.total)} simulated days` +
+    (fl.done && fl.revealed < (fl.series.share || []).length ? " (replaying a finished run)" : "");
+  if (!ck) return;
+  $("fl-avail").textContent = pct(ck.fleet_availability_mean);
+  $("fl-ontime").textContent = pct(ck.p_delivery_within_target);
+  $("fl-fuel").textContent = `€${int(ck.fuel_cost_mean)}`;
+  $("fl-fuel-s").textContent = `${int(ck.fuel_l_mean)} L per day`;
+  $("fl-break").textContent = pct(ck.p_breakdowns_over_alert);
+  $("fl-break-s").textContent = `P(> ${ck.breakdown_alert} breakdowns per day)`;
+  $("fl-sla").textContent = pct(ck.p_meet_sla);
+  $("fl-sla-s").textContent = obs.stat_label ? `${obs.stat_label} of deliveries on time` : "";
+
+  const slice = (k) => ({ all: fl.series[k] || [], shown: (fl.series[k] || []).slice(0, n) });
+  const warm = cssVar("--surrogate"), bad = cssVar("--bad"), good = cssVar("--good"), blue = cssVar("--observed");
+  flHist("fl-vehicles", slice("vehicles_required"), blue, "number of vehicles", [
+    flLine(ck.vehicles_required_mean, warm, `expected ${int(ck.vehicles_required_mean)}`, 0),
+    flLine(ck.vehicles_required_p95, bad, `P95 ${int(ck.vehicles_required_p95)}`, 1),
+    ...(obs.headline != null ? [flLine(obs.headline, good, `fleet ${obs.headline}`, 2)] : []),
+  ]);
+  flHist("fl-maint", slice("maint_cost"), good, "daily maintenance cost (€)", [
+    flLine(ck.maint_cost_mean, warm, `expected €${int(ck.maint_cost_mean)}`, 0),
+    flLine(ck.maint_cost_p95, bad, `P95 €${int(ck.maint_cost_p95)}`, 1),
+  ]);
+  flHist("fl-share", slice("share"), warm, "on-time share of the day", [
+    ...(obs.stat != null ? [flLine(obs.stat, blue, obs.stat_label || "SLA", 0)] : []),
+  ], ".0%");
+  const on = ck.on_time_share_mean;
+  Plotly.react("fl-outcome", [{ type: "pie", hole: 0.55, sort: false, labels: ["On time", "Delayed"],
+      values: [on, 1 - on], marker: { colors: [good, bad] }, textinfo: "percent",
+      textfont: { color: "#fff", size: 13 }, hovertemplate: "%{label}: %{percent}<extra></extra>" }], {
+    paper_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 11 },
+    margin: { l: 10, r: 10, t: 10, b: 10 }, showlegend: true, legend: { orientation: "h", y: -0.02 },
+  }, { displaylogo: false, responsive: true });
+}
+
+function setMode(test) {
+  state.test = test;
+  const fleet = test === "fleet";
+  $("main-grid").classList.toggle("fleet-mode", fleet);
+  $("fleet-live").hidden = !fleet;
+  $("cloud-title").textContent = fleet ? "Fleet records by TDA regime" : "Data vs. random surrogate";
+  $("cloud-hint").textContent = fleet
+    ? "Every vehicle-day record, coloured by the regime TDA assigned it. Orange: the vehicles drawn for the day being simulated."
+    : "Observed points (blue) and the structureless surrogate the current simulation ran on (orange).";
+  $("hist-title").textContent = fleet ? "On-time share per simulated day" : "Null distribution";
+  $("table-title").textContent = fleet ? "Fleet simulation" : "Loops";
+  $("loops-wrap").hidden = fleet;
+  $("fleet-summary").hidden = !fleet;
+}
+
+function renderFleetSummary(fleet) {
+  const box = $("fleet-summary");
+  box.replaceChildren();
+  if (!fleet) return;
+  const k = fleet.summary.kpi, c = fleet.config;
+  const pct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
+  const num = (v) => (v == null ? "–" : Math.round(v).toLocaleString("en-GB"));
+  [["P(meet SLA)", pct(k.p_meet_sla)], ["Delivered within " + c.delivery_target_h + " h", pct(k.p_delivery_within_target)],
+   ["Vehicles needed (P95)", `${num(k.vehicles_required_mean)} (${num(k.vehicles_required_p95)})`],
+   ["Fleet availability", pct(k.fleet_availability_mean)], ["Fuel per day", `${num(k.fuel_l_mean)} L`],
+   ["Breakdown risk", `${pct(k.p_breakdowns_over_alert)} (> ${k.breakdown_alert})`],
+   ["Maintenance per day", `€${num(k.maint_cost_mean)}`], ["Simulated days", num(fleet.n_completed)]]
+    .forEach(([label, value]) => {
+      const item = document.createElement("div");
+      item.className = "item";
+      const a = document.createElement("span"); a.className = "k"; a.textContent = label;
+      const b = document.createElement("span"); b.className = "v"; b.textContent = value;
+      item.append(a, b);
+      box.appendChild(item);
+    });
+  $("verdict").textContent = `· ${pct(k.p_meet_sla)} of days meet the ${Math.round(c.sla_on_time * 100)}% on-time SLA`;
+}
+
 function resetView() {
+  resetFleet();
   Object.assign(state, { null: [], observed: null, frame: null, running: null, status: null, plotReady: false });
+  $("report-btn").hidden = true;
+  $("fleet-summary").replaceChildren();
   Plotly.purge("plot3d");
   Plotly.purge("plothist");
   renderTable(null, "Results appear when the job finishes.");
@@ -222,12 +433,12 @@ async function poll(generation) {
     const view = await api(`/v1/jobs/${state.jobId}/live?since=${state.null.length}`);
     if (generation !== state.generation) return;
     state.status = view.status;
-    const feed = view.live.loops;
+    const test = view.live.loops ? "loops" : view.live.fleet ? "fleet" : null;
+    if (test && state.test !== test) setMode(test);
+    const feed = test ? view.live[test] : null;
     if (!feed) {
       renderStats(view);
-      $("status-line").textContent += view.tests.includes("fleet")
-        ? " · this is a fleet job: open it in Fleet (top bar)."
-        : " · the live 3D view shows the loop test; this job has none.";
+      $("status-line").textContent += " · this job has nothing to show live.";
     } else {
       if (feed.null_from !== state.null.length) {        // out of sync → restart from 0
         state.null = [];
@@ -236,6 +447,10 @@ async function poll(generation) {
         return;
       }
       if (feed.observed) state.observed = feed.observed;
+      if (test === "fleet") {
+        const p = (view.progress && view.progress.fleet) || {};
+        flReceive(feed, p.total);
+      }
       state.null.push(...feed.null);
       state.frame = feed.frame;
       state.running = feed.running;
@@ -268,7 +483,15 @@ async function showResult(view) {
     return;
   }
   const result = await api(`/v1/jobs/${state.jobId}/result`);
-  renderTable(result.loops);
+  if (state.test === "fleet") {
+    renderFleetSummary(result.fleet);
+    fl.done = true;
+    if (!fl.timer) finishFleet();
+  } else renderTable(result.loops);
+  // the job is done: its report (HTML view + PDF + Excel) can be generated
+  const btn = $("report-btn");
+  btn.href = `/report?job=${encodeURIComponent(state.jobId)}`;
+  btn.hidden = false;
 }
 
 function selectJob(jobId) {
@@ -347,6 +570,7 @@ async function init() {
   $("refresh").addEventListener("click", () => refreshJobs());
   $("run").addEventListener("click", runSynthetic);
   $("cancel").addEventListener("click", cancelJob);
+  $("fl-replay").addEventListener("click", () => { fl.revealed = 0; $("fl-replay").disabled = true; startReveal(); });
   requestAnimationFrame(rotate);
 
   try {

@@ -67,9 +67,11 @@ def fleet_page():
 
 
 @app.get("/report", include_in_schema=False)
-def fleet_report_page():
-    """Fleet-management report (static page; renders /v1/reports/fleet, links the PDF and Excel)."""
-    return FileResponse(FRONTEND_DIR / "fleet_report.html", headers={"Cache-Control": "no-cache"})
+def report_page(job: str | None = None):
+    """``/report?job=<id>``: report of that job (HTML + PDF + Excel). Without a job: the
+    assumption-based fleet report. Both are static pages that render API JSON."""
+    page = "fleet.html" if job else "fleet_report.html"
+    return FileResponse(FRONTEND_DIR / page, headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health")

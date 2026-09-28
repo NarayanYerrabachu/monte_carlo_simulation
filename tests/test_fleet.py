@@ -104,6 +104,12 @@ def test_report_page_and_viewer_link(client):
     assert 'href="/report"' in client.get("/").text
 
 
+def test_report_page_for_a_job(client):
+    page = client.get("/report?job=abc")
+    assert page.status_code == 200 and "/js/fleet.js" in page.text and 'id="dl-pdf"' in page.text
+    assert "fleet_report.js" in client.get("/report").text                  # no job: assumption report
+
+
 def test_fleet_dashboard_served(client):
     page = client.get("/fleet")
     assert page.status_code == 200 and "/js/fleet.js" in page.text and "/css/fleet.css" in page.text

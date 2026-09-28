@@ -50,6 +50,7 @@ code { font-size: .92em; background: var(--panel-2); padding: 1px 5px; border-ra
 .dot.ok { background: var(--good); }
 .dot.down { background: var(--bad); }
 .nav { display: flex; gap: 4px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
 .nav a { font-size: 13px; font-weight: 600; text-decoration: none; color: var(--muted); padding: 5px 10px; border-radius: 7px; }
 .nav a:hover { background: var(--bg); color: var(--ink); }
 .nav a[aria-current="page"] { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
