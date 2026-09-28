@@ -165,6 +165,7 @@ def test_mapper_graph_for_the_viewer():
     by_id = {nd["id"]: nd for nd in g["nodes"]}
     assert by_id[7]["size"] == len(slow)                     # out-of-range member dropped
     assert by_id[0]["short_label"] == "Urban Above-Avg" and by_id[7]["label"] is None
+    assert "late deliveries" in by_id[7]["profile"] or "long days" in by_id[7]["profile"]   # the slow day
     assert by_id[7]["on_time"] < 0.6 < by_id[0]["on_time"]    # the slow day's records sit in node 7
     assert g["edges"] == [[0, 7]]                            # edge to an unknown node dropped
     assert len(snap["frames"]) >= 1 and snap["frames"][-1]["n"] == 100

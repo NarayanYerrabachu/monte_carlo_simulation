@@ -86,7 +86,7 @@ function renderMapper3d(frame) {
       marker: { size: g.nodes.map((nd) => radius(nd.size)), color: g.nodes.map((nd) => nd.on_time), cmin: 0, cmax: 1,
                 colorscale: [[0, "#d03b3b"], [0.6, "#f59e0b"], [0.9, "#8bc34a"], [1, "#15803d"]], opacity: 0.85,
                 line: { width: 0 }, colorbar: { title: { text: "on-time", side: "right" }, tickformat: ".0%", len: 0.6, thickness: 10 } },
-      text: g.nodes.map((nd) => `<b>${nd.label || `group ${nd.id}`}</b><br>group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)} · availability ${pct(nd.availability)}`),
+      text: g.nodes.map((nd) => `<b>${nd.label || `group ${nd.id}`}</b><br>${nd.profile || ""}<br>group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)} · availability ${pct(nd.availability)}`),
       hovertemplate: "%{text}<extra></extra>" },
     { type: "scatter3d", mode: "text", name: "labels", showlegend: false, hoverinfo: "skip",
       x: shown.map((nd) => nd.x), y: shown.map((nd) => nd.y), z: shown.map((nd) => nd.z),
@@ -122,7 +122,7 @@ function renderMapperKey(shown, risky) {
   $("plot3d").parentElement.classList.toggle("has-key", shown.length > 0);
   if (!shown.length) return;
   const head = table.createTHead().insertRow();
-  ["#", "Group", "Records", "On time", "Breakdowns"].forEach((h) => {
+  ["#", "Group", "What stands out", "Records", "On time", "Breakdowns"].forEach((h) => {
     const th = document.createElement("th"); th.textContent = h; head.appendChild(th);
   });
   const body = table.createTBody();
@@ -131,6 +131,7 @@ function renderMapperKey(shown, risky) {
     const num = tr.insertCell(); num.textContent = `${risky(nd) ? "⚠ " : ""}${i + 1}`;
     if (risky(nd)) num.className = "risk";
     tr.insertCell().textContent = nd.label || `group ${nd.id}`;
+    tr.insertCell().textContent = nd.profile || "–";
     tr.insertCell().textContent = int(nd.size);
     tr.insertCell().textContent = pct(nd.on_time);
     tr.insertCell().textContent = pct(nd.breakdown_rate);
