@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir pipenv \
 
 COPY mc_service/ ./mc_service/
 
+ENV MPLCONFIGDIR=/tmp/matplotlib
+
 RUN useradd --create-home --uid 1000 mc
 USER mc
 

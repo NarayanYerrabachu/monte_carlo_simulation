@@ -14,6 +14,7 @@ from fastapi.staticfiles import StaticFiles
 
 from mc_service import CONTRACT_VERSION, __version__
 from mc_service.api import jobs as jobs_api
+from mc_service.api import reports as reports_api
 from mc_service.api.body_limit import BodyLimitMiddleware
 from mc_service.api.envelope import EnvelopeRoute, install_error_handlers
 from mc_service.config import ServiceConfig
@@ -46,6 +47,7 @@ app.router.route_class = EnvelopeRoute
 install_error_handlers(app)
 app.add_middleware(BodyLimitMiddleware, max_bytes=config.max_body_bytes)
 app.include_router(jobs_api.router)
+app.include_router(reports_api.router)
 app.mount("/static", NoCacheStatic(directory=STATIC_DIR), name="static")
 
 
@@ -53,6 +55,12 @@ app.mount("/static", NoCacheStatic(directory=STATIC_DIR), name="static")
 def viewer():
     """Live viewer (static page; all rendering happens in the browser)."""
     return FileResponse(STATIC_DIR / "index.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/report", include_in_schema=False)
+def fleet_report_page():
+    """Fleet-management report (static page; renders /v1/reports/fleet, links the PDF and Excel)."""
+    return FileResponse(STATIC_DIR / "fleet_report.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health")

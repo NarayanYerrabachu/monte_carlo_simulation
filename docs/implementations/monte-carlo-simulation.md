@@ -259,6 +259,7 @@ Demo:
 |---|---|---|---|
 | [1 – Service skeleton, contract & engine](monte-carlo-simulation/phase-1-service-engine.md) | service | FastAPI app, envelope, job store + workers, pydantic contract, `simulate`/p/BH/CI, Dockerfile | ✅ |
 | [2 – Loop significance](monte-carlo-simulation/phase-2-loop-significance.md) | service | Surrogate nulls, ripser, noise band, per-loop p + live 3D viewer | ✅ |
+| Fleet report (added) | service | Fleet-management Monte Carlo, `/report` page, PDF + Excel exports (`mc_service/fleet/`) | ✅ |
 | [3 – Relationship permutation](monte-carlo-simulation/phase-3-relationship-permutation.md) | service | Vectorised lift, (block) permutation, BH | ⏸️ |
 | [4 – Pre-event pseudo-events](monte-carlo-simulation/phase-4-pre-event.md) | service | Pseudo-event sampler, band null distributions | ⏸️ |
 | [5 – Stability](monte-carlo-simulation/phase-5-stability.md) | service | Anomaly bootstrap, Mapper perturbation | ⏸️ |
