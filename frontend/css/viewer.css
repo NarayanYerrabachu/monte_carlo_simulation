@@ -160,9 +160,9 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 
 /* fleet-only live viewer layout */
 .page { max-width: 1440px; margin: 0 auto; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
-.page .cloud .plot { min-height: 560px; }
+.page .cloud .plot { min-height: 640px; border-radius: 8px; overflow: hidden; background: #0F1117; }
 .mapper-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
-.mapper-wrap.has-key { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); }
+.mapper-wrap.has-key { grid-template-columns: minmax(0, 1fr); }
 .mapper-key h3 { margin: 4px 0 6px; font-size: 13px; }
 .mapper-key table { font-size: 12px; }
 .mapper-key td, .mapper-key th { padding: 5px 6px; white-space: normal; }

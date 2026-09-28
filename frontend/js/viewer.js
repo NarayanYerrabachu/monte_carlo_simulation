@@ -22,7 +22,7 @@ const int = (v) => (v == null ? "–" : Math.round(v).toLocaleString("en-GB"));
 const state = {
   jobId: null, status: null, generation: 0, timer: null, received: 0,
   observed: null, frame: null, plotReady: false,
-  eye: { angle: Math.PI / 4, r: 2.1, z: 1.1 },
+  eye: { angle: Math.PI / 4, r: Math.hypot(1.6, 1.6), z: 0.9 },   // CortXplorer's TDA Mapper camera
 };
 const fl = { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false, paused: false };
 const eyeXYZ = () => ({ x: state.eye.r * Math.cos(state.eye.angle), y: state.eye.r * Math.sin(state.eye.angle), z: state.eye.z });
@@ -57,59 +57,69 @@ function cloudTrace(points, name, color, opacity, size) {
 function renderMapper3d(frame) {
   const g = state.observed.graph;
   const byId = new Map(g.nodes.map((nd) => [nd.id, nd]));
-  const maxSize = Math.max(...g.nodes.map((nd) => nd.size));
   const ex = [], ey = [], ez = [];
   for (const [a, b] of g.edges) {
     const p = byId.get(a), q = byId.get(b);
     if (!p || !q) continue;
     ex.push(p.x, q.x, null); ey.push(p.y, q.y, null); ez.push(p.z, q.z, null);
   }
-  const radius = (size) => 3 + 20 * Math.sqrt(size / maxSize);
-  // Labels like CortXplorer's TDA Mapper, readable in 3D: each distinct label once (on its
-  // largest group), numbered in the plot and spelled out in the table beside it.
+  // same marker sizing as CortXplorer's TDA Mapper 3D view
+  const radius = (size) => Math.max(5, Math.min(28, Math.sqrt(size) * 2.4));
+  // Labels: each distinct label once (on its largest group), numbered in the plot and spelled
+  // out in the key table below; ⚠ = below 70 % on time.
   const RISK = 0.7, MAX_LABELS = 12;
   const risky = (nd) => nd.on_time != null && nd.on_time < RISK;
   const bySize = [...g.nodes].sort((a, b) => b.size - a.size);
   const seen = new Set(), shown = [];
-  for (const nd of bySize) {                      // largest groups first, then the largest at-risk ones
+  for (const nd of bySize) {
     const key = nd.label || `group ${nd.id}`;
     if (shown.length >= MAX_LABELS) break;
     if (seen.has(key) || nd.size < 20) continue;
     if (shown.length < 8 || risky(nd)) { seen.add(key); shown.push(nd); }
   }
   renderMapperKey(shown, risky);
+  const rank = new Map(shown.map((nd, i) => [nd.id, i + 1]));
+  const late = (nd) => (nd.on_time == null ? 0 : 1 - nd.on_time);
+  const records = g.nodes.reduce((acc, nd) => acc + nd.size, 0);
   const traces = [
-    { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: cssVar("--muted"), width: 1.5 },
-      hoverinfo: "skip", name: "shared records", showlegend: false },
-    { type: "scatter3d", mode: "markers", name: "Mapper groups",
+    { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: "#3A4050", width: 1 },
+      hoverinfo: "skip", showlegend: false },
+    { type: "scatter3d", mode: "markers+text", showlegend: false,
       x: g.nodes.map((nd) => nd.x), y: g.nodes.map((nd) => nd.y), z: g.nodes.map((nd) => nd.z),
-      marker: { size: g.nodes.map((nd) => radius(nd.size)), color: g.nodes.map((nd) => nd.on_time), cmin: 0, cmax: 1,
-                colorscale: [[0, "#d03b3b"], [0.6, "#f59e0b"], [0.9, "#8bc34a"], [1, "#15803d"]], opacity: 0.85,
-                line: { width: 0 }, colorbar: { title: { text: "on-time", side: "right" }, tickformat: ".0%", len: 0.6, thickness: 10 } },
-      text: g.nodes.map((nd) => `<b>${nd.label || `group ${nd.id}`}</b><br>${nd.profile || ""}<br>group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)} · availability ${pct(nd.availability)}`),
-      hovertemplate: "%{text}<extra></extra>" },
-    { type: "scatter3d", mode: "text", name: "labels", showlegend: false, hoverinfo: "skip",
-      x: shown.map((nd) => nd.x), y: shown.map((nd) => nd.y), z: shown.map((nd) => nd.z),
-      text: shown.map((nd, i) => `${risky(nd) ? "⚠" : ""}${i + 1}`),
-      textposition: "middle right", textfont: { size: 14, color: cssVar("--ink"), family: "system-ui, sans-serif" } },
+      text: g.nodes.map((nd) => (rank.has(nd.id) ? `${risky(nd) ? "⚠" : ""}${rank.get(nd.id)}` : "")),
+      textposition: "top center",
+      textfont: { size: 12, color: "rgba(217,220,227,0.95)", family: "IBM Plex Mono, monospace" },
+      // CortXplorer's teal → purple → red scale, here for the share of late deliveries
+      marker: { size: g.nodes.map((nd) => radius(nd.size)), color: g.nodes.map(late), cmin: 0, cmax: 1,
+                colorscale: [[0, "#5E9CA6"], [0.5, "#9B7FD4"], [1, "#E05252"]], opacity: 0.88,
+                line: { width: 1.5, color: "rgba(15,17,23,0.7)" },
+                colorbar: { title: { text: "late deliveries", side: "right", font: { color: "#878E9C", size: 11 } },
+                            tickformat: ".0%", tickfont: { color: "#878E9C", size: 10 }, len: 0.55, thickness: 10,
+                            outlinewidth: 0 } },
+      customdata: g.nodes.map((nd) => `<b>${nd.label || `group ${nd.id}`}</b><br>${nd.profile || ""}<br>group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)} · availability ${pct(nd.availability)}`),
+      hovertemplate: "%{customdata}<extra></extra>" },
   ];
   if (frame && frame.nodes && frame.nodes.length) {
     const hit = frame.nodes.map(([id, c]) => [byId.get(id), c]).filter(([nd]) => nd);
-    traces.push({ type: "scatter3d", mode: "markers", name: `Vehicles of a simulated day (${frame.day})`,
+    traces.push({ type: "scatter3d", mode: "markers", showlegend: false,
       x: hit.map(([nd]) => nd.x), y: hit.map(([nd]) => nd.y), z: hit.map(([nd]) => nd.z),
-      marker: { size: hit.map(([nd]) => radius(nd.size) + 6), color: cssVar("--surrogate"), opacity: 0.55,
-                line: { color: cssVar("--surrogate"), width: 2 } },
-      text: hit.map(([nd, c]) => `${c} vehicle${c === 1 ? "" : "s"} of this day in <b>${nd.label || `group ${nd.id}`}</b> (group ${nd.id})`),
-      hovertemplate: "%{text}<extra></extra>" });
+      marker: { size: hit.map(([nd]) => radius(nd.size) + 7), color: "rgba(0,0,0,0)", opacity: 1,
+                line: { color: "#F5A623", width: 5 } },
+      customdata: hit.map(([nd, c]) => `${c} vehicle${c === 1 ? "" : "s"} of the simulated day (${frame.day}) in <b>${nd.label || `group ${nd.id}`}</b>`),
+      hovertemplate: "%{customdata}<extra></extra>" });
   }
-  const muted = cssVar("--muted"), grid = cssVar("--line");
-  const axis = (t) => ({ showbackground: false, gridcolor: grid, zerolinecolor: grid, color: muted, title: { text: t } });
+  const axis = (title, ticks) => ({ showgrid: true, gridcolor: ticks ? "#2A2F3A" : "#1E2330", showticklabels: ticks,
+    tickfont: { color: "#59616E", size: 9 }, zeroline: ticks, zerolinecolor: "#3A4050", backgroundcolor: "#0F1117",
+    showbackground: true, showspikes: false, title: { text: title, font: { color: ticks ? "#878E9C" : "#59616E", size: 11 } } });
   Plotly.react("plot3d", traces, {
-    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 12 },
-    margin: { l: 0, r: 0, t: 8, b: 30 }, showlegend: true,
-    legend: { orientation: "h", x: 0, y: 0, yanchor: "top", bgcolor: "rgba(0,0,0,0)", font: { size: 11 } },
-    scene: { xaxis: axis("← Topological spread →"), yaxis: axis("← Topological spread →"),
-             zaxis: axis("Filter height (how different from average)"), aspectmode: "cube", camera: { eye: eyeXYZ() } },
+    title: { text: `TDA Mapper — 3D Shape of Your Data<br><span style="font-size:11px;color:#878E9C">${int(g.nodes.length)} groups · ${int(g.edges.length)} connections · ${int(components(g))} separate clusters · ${int(records)} total records</span>`,
+             font: { color: "#D9DCE3", size: 15, family: "IBM Plex Mono, monospace" }, x: 0.5, xanchor: "center" },
+    paper_bgcolor: "#0F1117", plot_bgcolor: "#0F1117",
+    font: { color: "#D9DCE3", family: "IBM Plex Mono, monospace" },
+    margin: { l: 0, r: 0, t: 70, b: 10 }, showlegend: false,
+    scene: { bgcolor: "#0F1117", xaxis: axis("← Topological spread →", false), yaxis: axis("← Topological spread →", false),
+             zaxis: axis("Filter height (how different from average)", true), aspectmode: "cube",
+             camera: { eye: eyeXYZ(), center: { x: 0, y: 0, z: 0 } } },
     uirevision: "keep",
   }, { displaylogo: false, responsive: true });
   state.plotReady = true;
@@ -159,7 +169,7 @@ function render3d(frame = state.frame) {
     $("cloud-title").textContent = "TDA Mapper — 3D shape of the fleet data";
     const g = obs.graph;
     const records = g.nodes.reduce((a, nd) => a + nd.size, 0);
-    $("cloud-hint").textContent = `${int(g.nodes.length)} groups · ${int(g.edges.length)} connections · ${int(components(g))} separate clusters · ${int(records)} records (a record can sit in overlapping groups). Size = records, colour = on-time share; labels name the largest groups and the groups at risk (⚠ below 70 % on time). Orange: the groups holding the vehicles of the simulated day being shown.`;
+    $("cloud-hint").textContent = `Same layout as CortXplorer's TDA Mapper (${int(records)} records; a record can sit in overlapping groups). Size = records, colour = share of late deliveries (teal on time → red late). Numbers mark the largest groups and the groups at risk (⚠ below 70 % on time), explained in the table below. Orange rings: the groups holding the vehicles of the simulated day being shown.`;
     renderMapper3d(frame);
     return;
   }
