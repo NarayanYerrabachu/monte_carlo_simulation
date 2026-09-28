@@ -1,0 +1,18 @@
+services:
+
+  # ── CortXplorer Monte Carlo simulation service ──────────────────────────
+  monte-carlo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yerran/monte-carlo-service:latest
+    platform: linux/amd64
+    container_name: monte-carlo-service
+    restart: unless-stopped
+    ports:
+      - "8020:8020"
+    environment:
+      MC_WORKERS:     ${MC_WORKERS:-2}
+      MC_N_JOBS:      ${MC_N_JOBS:-1}
+      MC_MAX_BODY_MB: ${MC_MAX_BODY_MB:-100}
+      MC_JOB_TTL_S:   ${MC_JOB_TTL_S:-3600}

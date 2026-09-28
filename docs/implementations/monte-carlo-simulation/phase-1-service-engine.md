@@ -1,13 +1,13 @@
 # Phase 1: Service Skeleton, Contract & Engine
 
-**Status**: ⏸️ Not Started
+**Status**: ✅ Completed (2026-09-28)
 **Parent Tracker**: `docs/implementations/monte-carlo-simulation.md`
 **Repo**: monte_carlo_simulation
 
 ## Goal
 A running FastAPI service on port 8020 that accepts a `SimulationRequest`, runs it as a background job
-and returns a `SimulationResponse`. No real tests yet — a built-in `echo` null (sample means of random
-normals) proves the job pipeline and engine end-to-end.
+and returns a `SimulationResponse`. No real tests yet — requests for a test without a runner finish with
+`errors: {"<test>": "not implemented yet"}`; API tests register a fake runner that uses the real engine.
 
 ## End-of-Phase System State
 - `pipenv run uvicorn mc_service.main:app --port 8020` starts; `GET /health` returns the envelope.
@@ -19,12 +19,12 @@ normals) proves the job pipeline and engine end-to-end.
 
 | Task | Files | Complexity | Status | Description |
 |------|-------|------------|--------|-------------|
-| 1.1 | `Pipfile`, `.python-version`, `.gitignore`, `Dockerfile`, `docker-compose.yml`, `README.md` | Low | ⏸️ | Project skeleton (Python 3.13, pipenv venv name `montecarlo`) |
-| 1.2 | `mc_service/main.py`, `mc_service/api/envelope.py`, `mc_service/api/jobs.py` | Medium | ⏸️ | App, envelope route class (same shape as demo), job endpoints, gzip request bodies, body limit |
-| 1.3 | `mc_service/contract.py` | Medium | ⏸️ | Pydantic models `contract_version "1"`, cross-field validation |
-| 1.4 | `mc_service/jobs.py` | Medium | ⏸️ | In-memory job store, `ThreadPoolExecutor(MC_WORKERS)`, progress, cancel flag, TTL cleanup |
-| 1.5 | `mc_service/engine.py`, `mc_service/nulls.py` | Medium | ⏸️ | `SimConfig`, `SimResult`, `simulate`, `p_value`, `bh_qvalues`, `percentile_ci`; null generators |
-| 1.6 | `tests/test_engine.py`, `tests/test_api.py` | Medium | ⏸️ | Unit + TestClient tests |
+| 1.1 | `Pipfile`, `.python-version`, `.gitignore`, `Dockerfile`, `docker-compose.yml`, `README.md` | Low | ✅ | Project skeleton (Python 3.13, pipenv venv name `montecarlo`) |
+| 1.2 | `mc_service/main.py`, `mc_service/api/envelope.py`, `mc_service/api/jobs.py` | Medium | ✅ | App, envelope route class (same shape as demo), job endpoints, gzip request bodies, body limit |
+| 1.3 | `mc_service/contract.py` | Medium | ✅ | Pydantic models `contract_version "1"`, cross-field validation |
+| 1.4 | `mc_service/jobs.py` | Medium | ✅ | In-memory job store, `ThreadPoolExecutor(MC_WORKERS)`, progress, cancel flag, TTL cleanup |
+| 1.5 | `mc_service/engine.py`, `mc_service/nulls.py` | Medium | ✅ | `SimConfig`, `SimResult`, `simulate`, `p_value`, `bh_qvalues`, `percentile_ci`; null generators |
+| 1.6 | `tests/test_engine.py`, `tests/test_api.py` | Medium | ✅ | Unit + TestClient tests |
 
 ## Detailed Task Descriptions
 
@@ -67,3 +67,11 @@ continues the others (partial results are useful). Inputs are dropped when the j
 
 ## Git Commit
 `[impl] Monte Carlo service: skeleton, contract, job API and simulation engine`
+
+## Outcome
+- 33 tests pass (`pipenv run pytest -q`), `ruff check` clean.
+- Image `yerran/monte-carlo-service:latest` (≈ 430 MB) builds; container `monte-carlo-service` healthy on
+  port 8020; gzip submit → status → result verified against the running container.
+- Contract addition: `SimulationResponse.errors` (per test that failed or has no runner yet).
+- Note: numpy on macOS (Accelerate BLAS) prints spurious `matmul` RuntimeWarnings in
+  `multivariate_normal`; results are finite and correct, the warnings are not from our code.

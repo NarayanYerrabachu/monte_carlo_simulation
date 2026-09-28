@@ -1,6 +1,6 @@
 # Monte Carlo Simulation Service for CortXplorer TDA - Implementation Plan
 
-**Status**: ⏸️ Not Started
+**Status**: 🔄 In Progress
 
 **Last Updated**: 2026-09-28
 
@@ -201,6 +201,7 @@ class SimulationResponse(BaseModel):
     contract_version: str; dataset_id: str; job_id: str
     loops: TestResult | None; relationships: TestResult | None; pre_event: TestResult | None
     anomaly_stability: TestResult | None; mapper_stability: TestResult | None
+    errors: dict[str, str]            # per failed / not-implemented test: why (others still returned)
 
 class TestResult(BaseModel):
     test: str; n_completed: int; stopped_early: bool; elapsed_s: float
@@ -251,7 +252,7 @@ Demo:
 
 | Phase | Repo | Scope | Status |
 |---|---|---|---|
-| [1 – Service skeleton, contract & engine](monte-carlo-simulation/phase-1-service-engine.md) | service | FastAPI app, envelope, job store + workers, pydantic contract, `simulate`/p/BH/CI, Dockerfile | ⏸️ |
+| [1 – Service skeleton, contract & engine](monte-carlo-simulation/phase-1-service-engine.md) | service | FastAPI app, envelope, job store + workers, pydantic contract, `simulate`/p/BH/CI, Dockerfile | ✅ |
 | [2 – Loop significance](monte-carlo-simulation/phase-2-loop-significance.md) | service | Surrogate nulls, ripser, noise band, per-loop p | ⏸️ |
 | [3 – Relationship permutation](monte-carlo-simulation/phase-3-relationship-permutation.md) | service | Vectorised lift, (block) permutation, BH | ⏸️ |
 | [4 – Pre-event pseudo-events](monte-carlo-simulation/phase-4-pre-event.md) | service | Pseudo-event sampler, band null distributions | ⏸️ |
