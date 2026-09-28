@@ -107,7 +107,7 @@ demo's **Open live view** link uses it.
    - charts: vehicle requirement, delivery outcome, maintenance cost and on-time share
    - **2D / 3D switch** on every chart. In 3D the distributions become waterfalls, showing the
      distribution after every 10% of the days so you see it settle, and the outcome chart becomes a
-     joint *vehicles required × on-time share* surface
+     *breakdowns × on-time share* view as 3D columns
    - the **TDA Mapper graph in 3D**, laid out like CortXplorer's TDA Mapper (topological spread on
      x and y, filter height on z). Node size is the number of records and colour is the on-time
      share; the groups holding the simulated day's vehicles light up during playback

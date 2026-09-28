@@ -99,6 +99,7 @@ def _mapper_graph(mapper: dict | None, n: int, on_time: np.ndarray, planned: np.
             record_nodes.setdefault(int(r), []).append(int(nd["id"]))
         pl = planned[m].sum()
         nodes.append({"id": int(nd["id"]), "x": nd["x"], "y": nd["y"], "z": nd["z"], "size": int(m.size),
+                      "label": nd.get("label"), "short_label": nd.get("short_label"),
                       "on_time": float(on_time[m].sum() / pl) if pl else None,
                       "breakdown_rate": float(breakdown[m].mean()), "availability": float(operating[m].mean())})
     ids = {nd["id"] for nd in nodes}

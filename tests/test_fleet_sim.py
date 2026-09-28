@@ -152,7 +152,8 @@ def test_mapper_graph_for_the_viewer():
     n = len(rows["vehicle_id"])
     slow = [i for i, r in enumerate(rows["regime"]) if r == 1]
     fast = [i for i, r in enumerate(rows["regime"]) if r == 0]
-    mapper = {"nodes": [{"id": 0, "x": 0, "y": 0, "z": -1, "size": len(fast), "members": fast},
+    mapper = {"nodes": [{"id": 0, "x": 0, "y": 0, "z": -1, "size": len(fast), "members": fast,
+                         "label": "Urban Above-Average", "short_label": "Urban Above-Avg"},
                         {"id": 7, "x": 1, "y": 1, "z": 1, "size": len(slow), "members": slow + [n + 5]}],
               "edges": [[0, 7], [0, 99]]}
     feed = LiveFeed()
@@ -163,6 +164,7 @@ def test_mapper_graph_for_the_viewer():
     g = snap["observed"]["graph"]
     by_id = {nd["id"]: nd for nd in g["nodes"]}
     assert by_id[7]["size"] == len(slow)                     # out-of-range member dropped
+    assert by_id[0]["short_label"] == "Urban Above-Avg" and by_id[7]["label"] is None
     assert by_id[7]["on_time"] < 0.6 < by_id[0]["on_time"]    # the slow day's records sit in node 7
     assert g["edges"] == [[0, 7]]                            # edge to an unknown node dropped
     assert len(snap["frames"]) >= 1 and snap["frames"][-1]["n"] == 100

@@ -144,7 +144,8 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button[aria-pressed="true"] { background: var(--observed); color: #fff; }
 .hint3d { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
-.fl-plot.is3d { height: 360px; }
+.fl-plot.is3d { height: 520px; }
+.fl-charts .card.wide3d { grid-column: 1 / -1; }
 
 @media (max-width: 900px) {
   .bar { padding: 12px 16px; }
@@ -159,7 +160,15 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 
 /* fleet-only live viewer layout */
 .page { max-width: 1440px; margin: 0 auto; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
-.page .cloud .plot { min-height: 460px; }
+.page .cloud .plot { min-height: 560px; }
+.mapper-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.mapper-wrap.has-key { grid-template-columns: minmax(0, 1.6fr) minmax(280px, 1fr); }
+.mapper-key h3 { margin: 4px 0 6px; font-size: 13px; }
+.mapper-key table { font-size: 12px; }
+.mapper-key td, .mapper-key th { padding: 5px 6px; white-space: normal; }
+.mapper-key td:first-child { font-weight: 700; white-space: nowrap; }
+.mapper-key .risk { color: var(--bad); }
+@media (max-width: 1000px) { .mapper-wrap.has-key { grid-template-columns: minmax(0, 1fr); } }
 .notice { margin: 16px 20px 0; padding: 16px; border-radius: 10px; border: 1px dashed var(--line); background: var(--panel); color: var(--muted); }
 .notice code { font-size: .92em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 900px) { .page { padding: 12px 16px 24px; } .page .cloud .plot { min-height: 340px; } }

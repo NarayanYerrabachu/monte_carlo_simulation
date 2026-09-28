@@ -65,6 +65,19 @@ function renderMapper3d(frame) {
     ex.push(p.x, q.x, null); ey.push(p.y, q.y, null); ez.push(p.z, q.z, null);
   }
   const radius = (size) => 3 + 20 * Math.sqrt(size / maxSize);
+  // Labels like CortXplorer's TDA Mapper, readable in 3D: each distinct label once (on its
+  // largest group), numbered in the plot and spelled out in the table beside it.
+  const RISK = 0.7, MAX_LABELS = 12;
+  const risky = (nd) => nd.on_time != null && nd.on_time < RISK;
+  const bySize = [...g.nodes].sort((a, b) => b.size - a.size);
+  const seen = new Set(), shown = [];
+  for (const nd of bySize) {                      // largest groups first, then the largest at-risk ones
+    const key = nd.label || `group ${nd.id}`;
+    if (shown.length >= MAX_LABELS) break;
+    if (seen.has(key) || nd.size < 20) continue;
+    if (shown.length < 8 || risky(nd)) { seen.add(key); shown.push(nd); }
+  }
+  renderMapperKey(shown, risky);
   const traces = [
     { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: cssVar("--muted"), width: 1.5 },
       hoverinfo: "skip", name: "shared records", showlegend: false },
@@ -73,8 +86,12 @@ function renderMapper3d(frame) {
       marker: { size: g.nodes.map((nd) => radius(nd.size)), color: g.nodes.map((nd) => nd.on_time), cmin: 0, cmax: 1,
                 colorscale: [[0, "#d03b3b"], [0.6, "#f59e0b"], [0.9, "#8bc34a"], [1, "#15803d"]], opacity: 0.85,
                 line: { width: 0 }, colorbar: { title: { text: "on-time", side: "right" }, tickformat: ".0%", len: 0.6, thickness: 10 } },
-      text: g.nodes.map((nd) => `group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)}`),
+      text: g.nodes.map((nd) => `<b>${nd.label || `group ${nd.id}`}</b><br>group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)} · availability ${pct(nd.availability)}`),
       hovertemplate: "%{text}<extra></extra>" },
+    { type: "scatter3d", mode: "text", name: "labels", showlegend: false, hoverinfo: "skip",
+      x: shown.map((nd) => nd.x), y: shown.map((nd) => nd.y), z: shown.map((nd) => nd.z),
+      text: shown.map((nd, i) => `${risky(nd) ? "⚠" : ""}${i + 1}`),
+      textposition: "middle right", textfont: { size: 14, color: cssVar("--ink"), family: "system-ui, sans-serif" } },
   ];
   if (frame && frame.nodes && frame.nodes.length) {
     const hit = frame.nodes.map(([id, c]) => [byId.get(id), c]).filter(([nd]) => nd);
@@ -82,7 +99,7 @@ function renderMapper3d(frame) {
       x: hit.map(([nd]) => nd.x), y: hit.map(([nd]) => nd.y), z: hit.map(([nd]) => nd.z),
       marker: { size: hit.map(([nd]) => radius(nd.size) + 6), color: cssVar("--surrogate"), opacity: 0.55,
                 line: { color: cssVar("--surrogate"), width: 2 } },
-      text: hit.map(([nd, c]) => `${c} vehicle${c === 1 ? "" : "s"} of this day in group ${nd.id}`),
+      text: hit.map(([nd, c]) => `${c} vehicle${c === 1 ? "" : "s"} of this day in <b>${nd.label || `group ${nd.id}`}</b> (group ${nd.id})`),
       hovertemplate: "%{text}<extra></extra>" });
   }
   const muted = cssVar("--muted"), grid = cssVar("--line");
@@ -98,6 +115,35 @@ function renderMapper3d(frame) {
   state.plotReady = true;
 }
 
+function renderMapperKey(shown, risky) {
+  const table = $("mapper-table");
+  table.replaceChildren();
+  $("mapper-key").hidden = !shown.length;
+  $("plot3d").parentElement.classList.toggle("has-key", shown.length > 0);
+  if (!shown.length) return;
+  const head = table.createTHead().insertRow();
+  ["#", "Group", "Records", "On time", "Breakdowns"].forEach((h) => {
+    const th = document.createElement("th"); th.textContent = h; head.appendChild(th);
+  });
+  const body = table.createTBody();
+  shown.forEach((nd, i) => {
+    const tr = body.insertRow();
+    const num = tr.insertCell(); num.textContent = `${risky(nd) ? "⚠ " : ""}${i + 1}`;
+    if (risky(nd)) num.className = "risk";
+    tr.insertCell().textContent = nd.label || `group ${nd.id}`;
+    tr.insertCell().textContent = int(nd.size);
+    tr.insertCell().textContent = pct(nd.on_time);
+    tr.insertCell().textContent = pct(nd.breakdown_rate);
+  });
+}
+
+function components(g) {                                     // connected clusters of the Mapper graph
+  const parent = new Map(g.nodes.map((nd) => [nd.id, nd.id]));
+  const find = (a) => { while (parent.get(a) !== a) { parent.set(a, parent.get(parent.get(a))); a = parent.get(a); } return a; };
+  for (const [a, b] of g.edges) if (parent.has(a) && parent.has(b)) parent.set(find(a), find(b));
+  return new Set(g.nodes.map((nd) => find(nd.id))).size;
+}
+
 function frameAt(n) {
   let best = null;
   for (const f of state.frames || []) if ((f.n || f.index + 1) <= n) best = f;
@@ -110,7 +156,9 @@ function render3d(frame = state.frame) {
     if (state.shownFrame === frame && state.plotReady) return;
     state.shownFrame = frame;
     $("cloud-title").textContent = "TDA Mapper — 3D shape of the fleet data";
-    $("cloud-hint").textContent = `${int(obs.graph.nodes.length)} Mapper groups of similar vehicle-days (size = records, colour = on-time share of their deliveries), linked where they share records. Orange: the groups holding the vehicles of the simulated day being shown.`;
+    const g = obs.graph;
+    const records = g.nodes.reduce((a, nd) => a + nd.size, 0);
+    $("cloud-hint").textContent = `${int(g.nodes.length)} groups · ${int(g.edges.length)} connections · ${int(components(g))} separate clusters · ${int(records)} records (a record can sit in overlapping groups). Size = records, colour = on-time share; labels name the largest groups and the groups at risk (⚠ below 70 % on time). Orange: the groups holding the vehicles of the simulated day being shown.`;
     renderMapper3d(frame);
     return;
   }
@@ -205,58 +253,135 @@ function countsFor(key) {
 }
 
 function scene(xTitle, yTitle, zTitle, xfmt, yfmt) {
-  const muted = cssVar("--muted"), grid = cssVar("--line");
-  const ax = (t, fmt) => ({ title: { text: t }, gridcolor: grid, zerolinecolor: grid, color: muted, showbackground: false, tickformat: fmt || "" });
+  const muted = cssVar("--muted"), grid = cssVar("--line"), ink = cssVar("--ink");
+  const ax = (t, fmt) => ({ title: { text: t, font: { size: 13, color: ink } }, tickfont: { size: 12, color: muted },
+                            nticks: 6, gridcolor: grid, zerolinecolor: grid, showbackground: false, tickformat: fmt || "" });
   return { xaxis: ax(xTitle, xfmt), yaxis: ax(yTitle, yfmt), zaxis: ax(zTitle, ".0%"),
-           camera: { eye: { x: 1.55, y: -1.55, z: 0.95 } }, aspectmode: "manual", aspectratio: { x: 1.4, y: 1.2, z: 0.7 } };
+           camera: { eye: { x: 1.9, y: -1.9, z: 1.05 } }, aspectmode: "manual", aspectratio: { x: 1.7, y: 1.3, z: 0.65 } };
 }
 
-function surfaceLayout(sc) {
-  return { paper_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 11 },
-           margin: { l: 0, r: 0, t: 0, b: 0 }, scene: sc, uirevision: "3d", showlegend: false };
+function surfaceLayout(sc, legend = false) {
+  return { paper_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 12 },
+           margin: { l: 10, r: 10, t: 10, b: 10 }, scene: sc, uirevision: "3d", showlegend: legend,
+           legend: { orientation: "v", x: 1, xanchor: "right", y: 0.95, bgcolor: "rgba(0,0,0,0)", font: { size: 11 } } };
 }
+
+// "#rrggbb" → "rgba(r,g,b,a)" (Plotly fills need plain colours)
+const rgba = (hex, a) => {
+  const h = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${a})`;
+};
 
 function waterfall(id, key, color, xTitle, xfmt) {
   const st = countsFor(key);
-  if (!st) return;
-  const rows = [{ n: 0, p: new Array(st.sp.nb).fill(0) }, ...st.slices];
-  if (st.upto && (!st.slices.length || st.slices[st.slices.length - 1].n !== st.upto)) {
-    rows.push({ n: st.upto, p: Array.from(st.counts, (c) => c / st.upto) });
-  }
-  Plotly.react(id, [{
-    type: "surface", x: mids(st.sp), y: rows.map((r) => r.n), z: rows.map((r) => r.p),
-    colorscale: [[0, cssVar("--panel")], [1, color]], showscale: false, opacity: 0.95,
-    contours: { y: { show: true, color: cssVar("--line"), width: 1 } },
-    hovertemplate: "%{x:,.2f} after %{y:,} days: %{z:.1%}<extra></extra>",
-  }], surfaceLayout(scene(xTitle, "simulated days", "probability", xfmt)), { displaylogo: false, responsive: true });
+  if (!st || !st.upto) return;
+  const rows = [...st.slices];
+  if (!rows.length || rows[rows.length - 1].n !== st.upto) rows.push({ n: st.upto, p: Array.from(st.counts, (c) => c / st.upto) });
+  // trim empty bins at both ends so the ridges fill the width
+  const last = rows[rows.length - 1].p;
+  let i0 = last.findIndex((v) => v > 0), i1 = last.length - 1 - [...last].reverse().findIndex((v) => v > 0);
+  if (i0 < 0) { i0 = 0; i1 = last.length - 1; }
+  const x = mids(st.sp).slice(i0, i1 + 1);
+  const traces = [];
+  rows.forEach((r, j) => {
+    const shade = 0.25 + 0.75 * (j + 1) / rows.length;          // early slices light, final slice dark
+    const z = r.p.slice(i0, i1 + 1);
+    // exact fill under the curve: a triangle strip between the curve and the floor
+    const vx = [], vy = [], vz = [], I = [], J = [], K = [];
+    x.forEach((xv, k) => { vx.push(xv, xv); vy.push(r.n, r.n); vz.push(z[k], 0); });
+    for (let k = 0; k < x.length - 1; k++) {
+      const t = 2 * k, b = 2 * k + 1, t2 = 2 * k + 2, b2 = 2 * k + 3;
+      I.push(t, b); J.push(b, b2); K.push(t2, t2);
+    }
+    traces.push({ type: "mesh3d", x: vx, y: vy, z: vz, i: I, j: J, k: K, color: color,
+                  opacity: 0.12 + 0.4 * shade, flatshading: true, hoverinfo: "skip", showlegend: false });
+    traces.push({
+      type: "scatter3d", mode: "lines", name: `after ${int(r.n)} days`,
+      x, y: x.map(() => r.n), z,
+      line: { color: rgba(color, Math.min(1, shade + 0.1)), width: j === rows.length - 1 ? 6 : 3 },
+      hovertemplate: `%{x:,.2f} after ${int(r.n)} days: %{z:.1%}<extra></extra>`,
+      showlegend: j === 0 || j === rows.length - 1,
+    });
+  });
+  Plotly.react(id, traces, surfaceLayout(scene(xTitle, "simulated days", "probability", xfmt), true),
+               { displaylogo: false, responsive: true });
 }
 
+// Breakdowns × on-time share as 3D columns on a coarse grid over the central
+// 99 % of days. (Not vehicles required × on-time: vehicles required ≈ fleet ÷
+// on-time share by construction, so that pair only draws an identity line.)
+const JOINT_CELLS = 12;
+
 function joint(id) {
-  const sv = binSpec("vehicles_required", 18), ss = binSpec("share", 18);   // coarser grid: a readable surface
+  const sv = binSpec("breakdowns", 60), ss = binSpec("share", 60);          // fine counts, regrouped below
   if (!sv || !ss) return;
   const sig = `${sv.lo}|${sv.size}|${sv.nb}|${ss.lo}|${ss.size}|${ss.nb}`;
   let st = inc.joint;
   if (!st || st.sig !== sig || fl.revealed < st.upto) {
     st = inc.joint = { sig, counts: Array.from({ length: ss.nb }, () => new Float64Array(sv.nb)), upto: 0 };
   }
-  const V = fl.series.vehicles_required, S = fl.series.share;
+  const V = fl.series.breakdowns, S = fl.series.share;
   for (let i = st.upto; i < fl.revealed; i++) {
     if (Number.isFinite(V[i]) && Number.isFinite(S[i])) st.counts[binOf(ss, S[i])][binOf(sv, V[i])] += 1;
   }
   st.upto = fl.revealed;
-  const n = Math.max(1, st.upto), obs = state.observed || {};
-  const x = mids(sv), y = mids(ss);
-  const traces = [{
-    type: "surface", x, y, z: st.counts.map((row) => Array.from(row, (c) => c / n)),
-    colorscale: [[0, cssVar("--panel")], [0.35, cssVar("--surrogate")], [1, cssVar("--bad")]], showscale: false,
-    hovertemplate: "%{x:,.0f} vehicles, %{y:.1%} on time: %{z:.2%}<extra></extra>",
-  }];
-  if (obs.stat != null) {                                  // the SLA as a line on the floor
-    traces.push({ type: "scatter3d", mode: "lines", x: [x[0], x[x.length - 1]], y: [obs.stat, obs.stat], z: [0, 0],
-                  line: { color: cssVar("--observed"), width: 6 }, hoverinfo: "skip", name: obs.stat_label || "SLA" });
+  if (!st.upto) return;
+
+  // central 99 %: fine bins from the 0.5 % to the 99.5 % cumulative share, per axis
+  const colSum = Array.from({ length: sv.nb }, (_, c) => st.counts.reduce((a, row) => a + row[c], 0));
+  const rowSum = st.counts.map((row) => row.reduce((a, v) => a + v, 0));
+  const central = (arr) => {
+    const tot = arr.reduce((a, v) => a + v, 0);
+    let acc = 0, lo = 0, hi = arr.length - 1;
+    for (let k = 0; k < arr.length; k++) { acc += arr[k]; if (acc / tot >= 0.005) { lo = k; break; } }
+    acc = 0;
+    for (let k = arr.length - 1; k >= 0; k--) { acc += arr[k]; if (acc / tot >= 0.005) { hi = k; break; } }
+    return [lo, hi];
+  };
+  const [c0, c1] = central(colSum), [r0, r1] = central(rowSum);
+  const group = (lo, hi) => Math.max(1, Math.ceil((hi - lo + 1) / JOINT_CELLS));
+  const gc = group(c0, c1), gr = group(r0, r1);
+  const nC = Math.ceil((c1 - c0 + 1) / gc), nR = Math.ceil((r1 - r0 + 1) / gr);
+  const cell = Array.from({ length: nR }, () => new Float64Array(nC));
+  for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) cell[Math.floor((r - r0) / gr)][Math.floor((c - c0) / gc)] += st.counts[r][c];
+
+  const n = st.upto, obs = state.observed || {};
+  const xw = sv.size * gc, yw = ss.size * gr;               // cell width in data units
+  const x0 = sv.lo + c0 * sv.size, y0 = ss.lo + r0 * ss.size;
+  const vx = [], vy = [], vz = [], I = [], J = [], K = [], inten = [], txt = [];
+  const box = (xa, xb, ya, yb, h, p, label) => {
+    const o = vx.length;
+    [[xa, ya, 0], [xb, ya, 0], [xb, yb, 0], [xa, yb, 0], [xa, ya, h], [xb, ya, h], [xb, yb, h], [xa, yb, h]]
+      .forEach(([a, b, c]) => { vx.push(a); vy.push(b); vz.push(c); inten.push(p); txt.push(label); });
+    [[0, 1, 2], [0, 2, 3], [4, 5, 6], [4, 6, 7], [0, 1, 5], [0, 5, 4], [1, 2, 6], [1, 6, 5],
+     [2, 3, 7], [2, 7, 6], [3, 0, 4], [3, 4, 7]].forEach(([a, b, c]) => { I.push(o + a); J.push(o + b); K.push(o + c); });
+  };
+  let pmax = 0;
+  for (let r = 0; r < nR; r++) for (let c = 0; c < nC; c++) {
+    const p = cell[r][c] / n;
+    if (p <= 0) continue;
+    pmax = Math.max(pmax, p);
+    const xa = x0 + c * xw, ya = y0 + r * yw;
+    const label = `${Math.round(xa)}–${Math.round(xa + xw) - 1} breakdowns · ${(ya * 100).toFixed(1)}–${((ya + yw) * 100).toFixed(1)}% on time: ${(p * 100).toFixed(2)}% of days`;
+    box(xa + 0.08 * xw, xa + 0.92 * xw, ya + 0.08 * yw, ya + 0.92 * yw, p, p, label);
   }
-  Plotly.react(id, traces, surfaceLayout(scene("vehicles required", "on-time share", "probability", "", ".0%")),
-               { displaylogo: false, responsive: true });
+  const traces = [{
+    type: "mesh3d", x: vx, y: vy, z: vz, i: I, j: J, k: K, intensity: inten, cmin: 0, cmax: pmax || 1,
+    colorscale: [[0, "#fde7cf"], [0.35, "#f6a15a"], [0.7, cssVar("--surrogate")], [1, cssVar("--bad")]],
+    flatshading: true, lighting: { ambient: 0.75, diffuse: 0.6 }, showscale: true,
+    colorbar: { title: { text: "share of days", side: "right" }, tickformat: ".1%", len: 0.6, thickness: 10 },
+    text: txt, hovertemplate: "%{text}<extra></extra>",
+  }];
+  const yEnd = y0 + nR * yw;
+  if (obs.stat != null && obs.stat >= y0 && obs.stat <= yEnd) {   // the SLA on the floor
+    traces.push({ type: "scatter3d", mode: "lines", x: [x0, x0 + nC * xw], y: [obs.stat, obs.stat], z: [0, 0],
+                  line: { color: cssVar("--observed"), width: 7 }, hoverinfo: "skip", name: obs.stat_label || "SLA" });
+  }
+  const sc = scene("breakdowns in the day", "on-time share", "share of days", "", ".0%");
+  sc.camera = { eye: { x: 1.7, y: -1.7, z: 1.25 } };
+  sc.aspectratio = { x: 1.3, y: 1.3, z: 0.7 };
+  Plotly.react(id, traces, surfaceLayout(sc, obs.stat != null), { displaylogo: false, responsive: true });
 }
 
 function setView(chart, is3d) {
@@ -266,10 +391,11 @@ function setView(chart, is3d) {
   });
   const hint = document.querySelector(`.hint3d[data-for="${chart}"]`);
   if (hint) hint.hidden = !is3d;
-  if (chart === "outcome") $("fl-outcome-title").textContent = is3d ? "Vehicles required × on-time share" : "Delivery outcome (simulation)";
+  if (chart === "outcome") $("fl-outcome-title").textContent = is3d ? "Breakdowns × on-time share" : "Delivery outcome (simulation)";
   const el = $(PLOT_ID[chart]);
   Plotly.purge(el);
   el.classList.toggle("is3d", is3d);
+  el.closest(".card").classList.toggle("wide3d", is3d);          // 3D gets the full width
   try { localStorage.setItem("mc-view3d", JSON.stringify(view3d)); } catch { /* storage unavailable */ }
   renderDashboard(true);
 }
@@ -369,6 +495,7 @@ function resetView() {
   $("fl-report").hidden = true;
   $("fl-replay").disabled = true;
   $("fl-pause").disabled = true;
+  $("mapper-key").hidden = true;
   $("progress-bar").style.width = "0";
   $("fl-progress").textContent = "–";
 }
