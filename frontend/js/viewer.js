@@ -120,7 +120,8 @@ function renderMapper3d(frame) {
   const late = (nd) => (nd.on_time == null ? 0 : 1 - nd.on_time);
   const records = g.nodes.reduce((acc, nd) => acc + nd.size, 0);
   const traces = [
-    { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: "#3A4050", width: 1 },
+    // connections: brighter than CortXplorer's #3A4050 so they stay visible on the dark scene
+    { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: "rgba(170,182,204,0.75)", width: 2.5 },
       hoverinfo: "skip", showlegend: false },
     { type: "scatter3d", mode: "markers+text", showlegend: false,
       x: g.nodes.map((nd) => nd.x), y: g.nodes.map((nd) => nd.y), z: g.nodes.map((nd) => nd.z),
