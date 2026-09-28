@@ -68,9 +68,11 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/v1/jobs/{id}` | Status (`queued`, `running`, `done`, `failed` or `cancelled`) and per-test progress |
 | `GET` | `/v1/jobs/{id}/result` | `SimulationResponse`. Returns 409 while the job is still running or after it was cancelled |
 | `DELETE` | `/v1/jobs/{id}` | Cancel the job |
+| `POST` | `/v1/jobs/{id}/rerun` | Re-run a fleet job on the same records with other parameters: `{"n_sims": 10000, "fleet": {"fleet_size": 100, "sla_on_time": 0.9}}` |
 | `GET` | `/v1/jobs` | All jobs, newest first |
 | `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
 | `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
+| `GET` | `/fleet?job=<id>` | **Fleet dashboard** for a fleet job sent by CortXplorer, with what-if re-runs |
 | `GET` | `/report` | **Report** page, with PDF and Excel download buttons |
 | `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
 | `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
@@ -93,7 +95,24 @@ noisy circle, a correlated blob or two rings) and then shows live:
 Jobs the demo submits show up in the job picker too. `/?job=<id>` opens a specific job; the
 demo's **Open live view** link uses it.
 
-## Fleet-management report
+## Fleet dashboard (data from CortXplorer)
+
+In CortXplorer, load a fleet table and press **Monte Carlo ↗**. CortXplorer sends the records, each
+record's TDA regime and ML anomaly score, plus the TDA/ML findings. The job opens at
+`/fleet?job=<id>` and shows:
+
+- the observed inputs
+- the probabilistic outputs (SLA probability, vehicles required with P95, fuel, breakdown risk,
+  maintenance cost)
+- KPI tiles
+- charts: delivery time against the target, vehicle requirement, outcome, maintenance cost
+- the TDA regimes, the TDA/ML findings and convergence
+
+**What-if** re-runs the same records with another fleet size, target or SLA (`/rerun`). Demand stays
+at the historical level, so a bigger fleet shows its effect on the same work. The fleet input is kept
+until the job TTL (`MC_JOB_TTL_S`) so re-runs work without CortXplorer.
+
+## Fleet-management report (assumption-based)
 
 `mc_service/fleet/` simulates one operating day of a delivery fleet 10,000 times. The inputs are
 the ranges from the fleet-management brief (vehicles 450–500, breakdowns 1–5%, drivers 90–98%,

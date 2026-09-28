@@ -90,11 +90,17 @@ def test_flagged_breakdowns_stay_in_the_pool():
     assert res["summary"]["kpi"]["breakdowns_mean"] == pytest.approx(4.0, abs=0.6)
 
 
-def test_deterministic_and_fleet_size_override():
+def test_deterministic_and_fleet_size_what_if():
     a, b = _run(_records()), _run(_records())
     assert a["summary"]["kpi"] == b["summary"]["kpi"]
-    big = _run(_records(), fleet_size=40)["summary"]["kpi"]
-    assert big["fleet_size"] == 40 and big["demand_mean"] == pytest.approx(2 * a["summary"]["kpi"]["demand_mean"], rel=0.05)
+    base = _run(_records(slow_day=3))["summary"]["kpi"]
+    big = _run(_records(slow_day=3), fleet_size=40)["summary"]["kpi"]
+    # more vehicles serve the SAME demand: demand and vehicles required stay, on-time improves
+    assert big["fleet_size"] == 40 and big["demand_mean"] == pytest.approx(base["demand_mean"], rel=0.02)
+    assert big["vehicles_required_mean"] == pytest.approx(base["vehicles_required_mean"], rel=0.05)
+    assert big["on_time_share_mean"] > base["on_time_share_mean"] and big["p_meet_sla"] >= base["p_meet_sla"]
+    small = _run(_records(), fleet_size=10)["summary"]["kpi"]
+    assert small["p_meet_sla"] < 0.05 and small["vehicles_required_mean"] == pytest.approx(20, abs=1)
 
 
 def test_delivery_time_hist_shares():
@@ -108,3 +114,12 @@ def test_validation():
     rows["fuel_l"] = rows["fuel_l"][:-1]
     with pytest.raises(ValueError, match="fuel_l"):
         FleetInput(**rows)
+
+
+def test_observed_inputs():
+    res = _run(_records(p_break=0.1))
+    inp = res["summary"]["inputs"]
+    assert inp["records"] == 200 and inp["vehicles"] == 20 and inp["days"] == 10
+    assert inp["fuel_l_per_100km"]["median"] == pytest.approx(8.0)
+    assert inp["driver_availability"]["median"] == pytest.approx(1.0)
+    assert inp["maintenance_cost_per_breakdown"]["median"] == pytest.approx(900.0)

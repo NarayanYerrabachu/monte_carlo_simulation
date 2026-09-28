@@ -218,3 +218,29 @@ def test_fleet_job_end_to_end(client):
     assert _wait(client, job_id)["status"] == "done"
     res = data(client.get(f"/v1/jobs/{job_id}/result"))
     assert res["fleet"]["summary"]["kpi"]["p_meet_sla"] > 0.9 and res["errors"] == {}
+
+
+def test_fleet_rerun_with_new_parameters(client):
+    from tests.test_fleet_sim import _records
+    req = {"contract_version": "1", "dataset_id": "fleet-ds", "settings": {"n_sims": 100, "seed": 1},
+           "fleet": {**_records(), "context": {"n_clusters": 3}}}
+    first = data(client.post("/v1/jobs", json=req))["job_id"]
+    assert _wait(client, first)["status"] == "done"
+
+    r = client.post(f"/v1/jobs/{first}/rerun", json={"n_sims": 60, "fleet": {"fleet_size": 40, "sla_on_time": 0.9}})
+    assert r.status_code == 202
+    second = data(r)
+    assert second["rerun_of"] == first
+    assert _wait(client, second["job_id"])["status"] == "done"
+    res = data(client.get(f"/v1/jobs/{second['job_id']}/result"))["fleet"]
+    assert res["config"]["fleet_size"] == 40 and res["config"]["sla_on_time"] == 0.9
+    assert res["n_completed"] == 60 and res["summary"]["context"] == {"n_clusters": 3}
+    assert res["summary"]["inputs"]["vehicles"] == 20
+
+
+def test_rerun_rejects_non_fleet_jobs(client, fake_loops):
+    job_id = data(client.post("/v1/jobs", json=_loops_request()))["job_id"]
+    _wait(client, job_id)
+    r = client.post(f"/v1/jobs/{job_id}/rerun", json={"fleet": {"fleet_size": 5}})
+    assert r.status_code == 409 and "only fleet jobs" in r.json()["message"]
+    assert client.post(f"/v1/jobs/{job_id}/rerun", json={"fleet": {"colour": 1}}).status_code == 422

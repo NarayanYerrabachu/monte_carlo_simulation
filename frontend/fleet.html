@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fleet Monte Carlo</title>
+  <link rel="stylesheet" href="/css/fleet.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="dot" id="health-dot"></span>
+      <h1>Monte Carlo <span class="muted">· fleet</span></h1>
+      <nav class="nav">
+        <a href="/">Live viewer</a>
+        <a href="/fleet" aria-current="page">Fleet</a>
+        <a href="/report">Report</a>
+      </nav>
+    </div>
+    <label class="field">
+      <span>Fleet job</span>
+      <select id="job-select"><option value="">— no fleet jobs yet —</option></select>
+    </label>
+  </header>
+
+  <main class="page">
+    <div>
+      <div class="eyebrow">Fleet management · Monte Carlo on TDA / ML results</div>
+      <h2 class="title">Monte Carlo Simulation in Fleet Management</h2>
+      <p class="lede">From “what might happen?” to “how likely is it?”: thousands of possible operating days, sampled from real fleet records and the regimes TDA found in them.</p>
+    </div>
+
+    <div id="empty" class="notice" hidden>
+      No fleet simulation yet. In CortXplorer, load a fleet table (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. The result opens here.
+    </div>
+    <div id="error" class="error" hidden></div>
+
+    <section class="card" id="whatif" hidden>
+      <h3>What-if: re-run with other parameters</h3>
+      <p class="note">Same fleet records and TDA / ML results; only the parameters change. Each run is kept as its own job.</p>
+      <div class="controls">
+        <label class="field"><span>Fleet size (vehicles)</span><input id="in-fleet" type="number" min="1" step="1"></label>
+        <label class="field"><span>Delivery target (h)</span><input id="in-target" type="number" min="0.5" max="24" step="0.5"></label>
+        <label class="field"><span>On-time SLA (%)</span><input id="in-sla" type="number" min="50" max="100" step="1"></label>
+        <label class="field"><span>Scenarios</span><input id="in-sims" type="number" min="1000" max="50000" step="1000"></label>
+        <label class="check"><input id="in-clean" type="checkbox"> Exclude operating records the ML model flags as anomalies (score ≥ 0.6)</label>
+        <button id="rerun" class="primary" type="button">Re-run simulation</button>
+      </div>
+      <div class="progress" id="progress" hidden><div id="bar"></div></div>
+      <div class="note" id="msg"></div>
+    </section>
+
+    <div id="result" hidden>
+      <section class="flow">
+        <div class="card">
+          <h3><span class="n">1.</span> Uncertain inputs <span class="muted">observed in the data</span></h3>
+          <div class="tiles" id="inputs"></div>
+        </div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="card engine" id="engine"></div>
+        <div class="arrow" aria-hidden="true">→</div>
+        <div class="card">
+          <h3><span class="n">2.</span> Probabilistic outputs</h3>
+          <div class="outputs" id="outputs"></div>
+        </div>
+      </section>
+
+      <section class="kpis" id="kpis"></section>
+
+      <section class="charts">
+        <div class="card"><h3>Delivery time distribution</h3><div class="chart" id="c-delivery"></div></div>
+        <div class="card"><h3>Vehicle requirement distribution</h3><div class="chart" id="c-vehicles"></div></div>
+        <div class="card"><h3>Delivery outcome</h3><div class="chart" id="c-outcome"></div></div>
+        <div class="card"><h3>Maintenance cost distribution</h3><div class="chart" id="c-maint"></div></div>
+      </section>
+
+      <section class="card">
+        <h3><span class="n">3.</span> Where the risk comes from — TDA regimes</h3>
+        <p class="note">Each regime is a cluster TDA found in the fleet records. The simulation samples from all of them; the table shows how each behaves in the data.</p>
+        <div class="table-wrap"><table id="regimes"></table></div>
+      </section>
+
+      <section class="two">
+        <div class="card"><h3>TDA / ML findings used</h3><div id="tda"></div></div>
+        <div class="card"><h3>Data quality — ML anomalies</h3><div id="anoms"></div></div>
+      </section>
+
+      <section class="card">
+        <h3>Are the scenarios enough?</h3>
+        <div class="chart small" id="c-conv"></div>
+        <div class="note" id="conv-note"></div>
+      </section>
+    </div>
+  </main>
+
+  <script src="/js/fleet.js"></script>
+</body>
+</html>

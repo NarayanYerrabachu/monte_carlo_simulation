@@ -184,6 +184,7 @@ class FleetInput(_Model):
     sla_on_time: float = Field(0.95, gt=0, le=1)           # a day meets the SLA at this on-time share
     breakdown_alert: int | None = Field(None, ge=0)        # report P(breakdowns > alert); default: P90
     exclude_anomalies_above: float | None = Field(0.6, ge=0, le=1)
+    context: dict[str, Any] | None = None                  # TDA / ML findings from the sender, shown with the result
 
     @model_validator(mode="after")
     def _check(self):
@@ -199,6 +200,22 @@ class FleetInput(_Model):
         if sum(self.deliveries_planned) <= 0:
             raise ValueError("deliveries_planned sums to 0 — nothing to simulate")
         return self
+
+
+class FleetOverrides(_Model):
+    """What-if parameters for re-running a fleet job on the same records."""
+    fleet_size: int | None = Field(None, ge=1)
+    delivery_target_h: float | None = Field(None, gt=0)
+    sla_on_time: float | None = Field(None, gt=0, le=1)
+    breakdown_alert: int | None = Field(None, ge=0)
+    exclude_anomalies_above: float | None = Field(None, ge=0, le=1)
+
+
+class RerunRequest(_Model):
+    """``POST /v1/jobs/{id}/rerun``: same fleet records, new parameters. Only fields sent are changed;
+    send ``exclude_anomalies_above: null`` explicitly to switch the anomaly exclusion off."""
+    n_sims: int | None = Field(None, ge=19, le=100_000)
+    fleet: FleetOverrides = Field(default_factory=FleetOverrides)
 
 
 class SimulationRequest(_Model):

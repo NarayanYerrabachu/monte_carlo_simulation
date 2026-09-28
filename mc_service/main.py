@@ -60,6 +60,12 @@ def viewer():
     return FileResponse(FRONTEND_DIR / "index.html", headers={"Cache-Control": "no-cache"})
 
 
+@app.get("/fleet", include_in_schema=False)
+def fleet_page():
+    """Fleet Monte Carlo dashboard (static page; renders /v1/jobs/{id}/result, re-runs via /rerun)."""
+    return FileResponse(FRONTEND_DIR / "fleet.html", headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/report", include_in_schema=False)
 def fleet_report_page():
     """Fleet-management report (static page; renders /v1/reports/fleet, links the PDF and Excel)."""

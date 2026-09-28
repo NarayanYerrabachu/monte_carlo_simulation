@@ -225,7 +225,9 @@ async function poll(generation) {
     const feed = view.live.loops;
     if (!feed) {
       renderStats(view);
-      $("status-line").textContent += " · the live 3D view shows the loop test; this job has none.";
+      $("status-line").textContent += view.tests.includes("fleet")
+        ? " · this is a fleet job: open it in Fleet (top bar)."
+        : " · the live 3D view shows the loop test; this job has none.";
     } else {
       if (feed.null_from !== state.null.length) {        // out of sync → restart from 0
         state.null = [];

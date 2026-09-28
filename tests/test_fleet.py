@@ -104,6 +104,13 @@ def test_report_page_and_viewer_link(client):
     assert 'href="/report"' in client.get("/").text
 
 
+def test_fleet_dashboard_served(client):
+    page = client.get("/fleet")
+    assert page.status_code == 200 and "/js/fleet.js" in page.text and "/css/fleet.css" in page.text
+    assert client.get("/js/fleet.js").status_code == 200
+    assert 'href="/fleet"' in client.get("/").text
+
+
 def test_frontend_assets_served(client):
     page = client.get("/report").text
     assert "/js/fleet_report.js" in page and "/css/fleet_report.css" in page

@@ -1,0 +1,321 @@
+// Fleet Monte Carlo dashboard (/fleet?job=<id>).
+// Shows a fleet job submitted by CortXplorer (records + TDA regimes + ML scores)
+// and re-runs it with other parameters via POST /v1/jobs/{id}/rerun.
+// Every number comes from the service; missing values render as "–".
+
+const POLL_MS = 700;
+const ACTIVE = ["queued", "running"];
+const $ = (id) => document.getElementById(id);
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const pct = (v, d = 1) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
+const num = (v, d = 0) => (v == null ? "–" : Number(v).toLocaleString("en-GB", { minimumFractionDigits: d, maximumFractionDigits: d }));
+const eur = (v) => (v == null ? "–" : `€${num(v)}`);
+// Plotly needs plain colours: "#rrggbb" + alpha → "rgba(...)"
+const rgba = (hex, a) => {
+  const h = hex.replace("#", "");
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  return `rgba(${r},${g},${b},${a})`;
+};
+
+const state = { jobId: null, timer: null, generation: 0 };
+
+// ── API (JSON in, JSON envelope out) ────────────────────────────────────────
+async function api(path, options = {}) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json", Accept: "application/json" }, ...options });
+  let body = null;
+  try { body = await res.json(); } catch { /* not JSON */ }
+  if (!res.ok || !body || body.status === "error") throw new Error((body && body.message) || `${res.status} ${res.statusText}`);
+  return body.data;
+}
+
+function showError(msg) {
+  $("error").textContent = msg || "";
+  $("error").hidden = !msg;
+}
+
+function node(tag, cls, text, parent) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+// ── charts ─────────────────────────────────────────────────────────────────
+function baseLayout(xTitle, yTitle, extra = {}) {
+  const muted = cssVar("--muted"), line = cssVar("--line");
+  return {
+    paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+    font: { color: muted, size: 11 }, margin: { l: 52, r: 16, t: 28, b: 44 }, bargap: 0.06, showlegend: false,
+    xaxis: { title: { text: xTitle }, gridcolor: line, zeroline: false },
+    yaxis: { title: { text: yTitle }, gridcolor: line, zeroline: false },
+    ...extra,
+  };
+}
+
+function vline(x, color, label, dash = "dash", row = 0) {
+  return {
+    shape: { type: "line", x0: x, x1: x, yref: "paper", y0: 0, y1: 1, line: { color, width: 2, dash } },
+    note: { x, yref: "paper", y: 1.03 - row * 0.09, text: label, showarrow: false, font: { color, size: 11 }, xanchor: "left", xshift: 4 },
+  };
+}
+
+function histChart(id, h, color, xTitle, lines) {
+  if (!h || !h.counts.length) { Plotly.purge(id); return; }
+  const total = h.counts.reduce((a, b) => a + b, 0) || 1;
+  const mids = h.counts.map((_, i) => (h.edges[i] + h.edges[i + 1]) / 2);
+  const width = h.edges.length > 1 ? (h.edges[1] - h.edges[0]) * 0.92 : 1;
+  Plotly.react(id, [{ type: "bar", x: mids, y: h.counts.map((c) => c / total), width, marker: { color },
+      hovertemplate: "%{x:,.0f}: %{y:.1%}<extra></extra>" }],
+    baseLayout(xTitle, "probability", { shapes: lines.map((l) => l.shape), annotations: lines.map((l) => l.note) }),
+    { displaylogo: false, responsive: true });
+}
+
+// ── render ─────────────────────────────────────────────────────────────────
+function tile(parent, k, v) {
+  const t = node("div", "tile", undefined, parent);
+  node("div", "k", k, t);
+  node("div", "v", v, t);
+}
+
+function output(parent, kind, strong, text) {
+  const o = node("div", "out", undefined, parent);
+  node("span", `ico ${kind}`, kind === "good" ? "✓" : kind === "bad" ? "!" : "•", o);
+  const body = node("div", "", undefined, o);
+  node("b", "", strong, body);
+  body.appendChild(document.createTextNode(` ${text}`));
+}
+
+function fillForm(cfg, nSims) {
+  $("in-fleet").value = cfg.fleet_size;
+  $("in-target").value = cfg.delivery_target_h;
+  $("in-sla").value = Math.round(cfg.sla_on_time * 100);
+  $("in-sims").value = nSims;
+  $("in-clean").checked = cfg.exclude_anomalies_above != null;
+}
+
+function render(f) {
+  const k = f.summary.kpi, cfg = f.config, inp = f.summary.inputs || {};
+  const good = cssVar("--good"), bad = cssVar("--bad"), accent = cssVar("--accent"), warm = cssVar("--warm");
+  const s1 = cssVar("--series-1"), s3 = cssVar("--series-3"), dim = cssVar("--dim");
+  $("result").hidden = false;
+  fillForm(cfg, f.n_completed);
+
+  const ins = $("inputs"); ins.replaceChildren();
+  const r = (q, fmt) => (q ? `${fmt(q.p5)} – ${fmt(q.p95)}` : "–");
+  tile(ins, "Vehicles in data", `${num(inp.vehicles)} · ${num(inp.days)} days`);
+  tile(ins, "Daily demand (P5–P95)", r(inp.daily_demand, num));
+  tile(ins, "Driver availability", r(inp.driver_availability, (v) => pct(v, 0)));
+  tile(ins, "Breakdowns per day", r(inp.daily_breakdowns, num));
+  tile(ins, "Fuel consumption", `${r(inp.fuel_l_per_100km, (v) => num(v, 1))} L/100 km`);
+  tile(ins, "Route duration", `${r(inp.route_duration_h, (v) => num(v, 1))} h`);
+  tile(ins, "Fuel price", `${r(inp.fuel_price_eur_l, (v) => num(v, 2))} €/L`);
+  tile(ins, "Maintenance per breakdown", r(inp.maintenance_cost_per_breakdown, eur));
+
+  const eng = $("engine"); eng.replaceChildren();
+  node("div", "eyebrow", "Monte Carlo engine", eng);
+  node("div", "big", num(f.n_completed), eng);
+  node("div", "", "simulated operating days", eng);
+  node("div", "note", `${num(cfg.n_pool)} of ${num(cfg.n_records)} records · ${cfg.n_days} historical days · fleet of ${num(cfg.fleet_size)}`, eng);
+  node("div", "note", "Each scenario draws a real day and resamples its vehicle records", eng);
+
+  const out = $("outputs"); out.replaceChildren();
+  output(out, k.p_meet_sla >= 0.9 ? "good" : "bad", pct(k.p_meet_sla), `probability a day meets the on-time SLA (≥ ${pct(cfg.sla_on_time, 0)} of deliveries on time)`);
+  output(out, k.p_miss_sla > 0.1 ? "bad" : "good", pct(k.p_miss_sla), "probability of missing the delivery target");
+  output(out, "info", `${num(k.vehicles_required_mean)} vehicles`, `expected to meet demand (95th percentile: ${num(k.vehicles_required_p95)}; fleet: ${num(k.fleet_size)})`);
+  output(out, "info", `${num(k.fuel_l_mean)} L`, `expected daily fuel consumption (P95 ${num(k.fuel_l_p95)} L)`);
+  output(out, "info", pct(k.p_breakdowns_over_alert), `probability of more than ${k.breakdown_alert} vehicle breakdowns in a day`);
+  output(out, "info", eur(k.maint_cost_mean), `expected maintenance cost per day (P95 ${eur(k.maint_cost_p95)})`);
+
+  const kp = $("kpis"); kp.replaceChildren();
+  [["Fleet availability", pct(k.fleet_availability_mean), "vehicles with driver and no breakdown", good],
+   [`Delivered within ${cfg.delivery_target_h} h`, pct(k.p_delivery_within_target), "of all planned deliveries (missed ones count as late)", accent],
+   ["Expected daily fuel cost", eur(k.fuel_cost_mean), `P95 ${eur(k.fuel_cost_p95)}`, warm],
+   ["Breakdown risk", pct(k.p_breakdowns_over_alert), `P(> ${k.breakdown_alert} breakdowns per day)`, bad]]
+    .forEach(([label, v, sub, color]) => {
+      const e = node("div", "card kpi", undefined, kp);
+      node("div", "k", label, e);
+      node("div", "v", v, e).style.color = color;
+      node("div", "s", sub, e);
+    });
+
+  const dt = f.summary.delivery_time;
+  if (dt.share.length) {
+    const mids = dt.share.map((_, i) => (dt.edges[i] + dt.edges[i + 1]) / 2);
+    const tgt = vline(cfg.delivery_target_h, bad, `target ${cfg.delivery_target_h} h`);
+    Plotly.react("c-delivery", [{ type: "bar", x: mids, y: dt.share, width: (dt.edges[1] - dt.edges[0]) * 0.92,
+        marker: { color: mids.map((m) => (m <= cfg.delivery_target_h ? s1 : dim)) },
+        hovertemplate: "%{x:.2f} h: %{y:.1%}<extra></extra>" }],
+      baseLayout("delivery time (hours)", "probability", {
+        shapes: [tgt.shape],
+        annotations: [tgt.note, { xref: "paper", yref: "paper", x: 1, y: 0.92, xanchor: "right", showarrow: false,
+          text: `P(within ${cfg.delivery_target_h} h | delivered) = ${pct(dt.p_within_target)}`, font: { color: cssVar("--ink"), size: 12 } }],
+      }), { displaylogo: false, responsive: true });
+  }
+  const H = f.summary.hist;
+  histChart("c-vehicles", H.vehicles_required, s1, "number of vehicles", [
+    vline(k.vehicles_required_mean, warm, `expected ${num(k.vehicles_required_mean)}`, "dash", 0),
+    vline(k.vehicles_required_p95, bad, `P95 ${num(k.vehicles_required_p95)}`, "dash", 1),
+    vline(k.fleet_size, good, `fleet ${num(k.fleet_size)}`, "dot", 2),
+  ]);
+  histChart("c-maint", H.maint_cost, s3, "daily maintenance cost (€)", [
+    vline(k.maint_cost_mean, warm, `expected ${eur(k.maint_cost_mean)}`, "dash", 0),
+    vline(k.maint_cost_p95, bad, `P95 ${eur(k.maint_cost_p95)}`, "dash", 1),
+  ]);
+  const o = f.summary.outcome;
+  Plotly.react("c-outcome", [{ type: "pie", hole: 0.55, sort: false, labels: ["On time", "Delayed"],
+      values: [o.on_time, o.delayed], marker: { colors: [good, bad] }, textinfo: "percent",
+      textfont: { color: "#fff", size: 13 }, hovertemplate: "%{label}: %{percent}<extra></extra>" }],
+    { ...baseLayout("", ""), showlegend: true, legend: { orientation: "h", y: -0.05 }, margin: { l: 10, r: 10, t: 10, b: 30 } },
+    { displaylogo: false, responsive: true });
+
+  const tb = $("regimes"); tb.replaceChildren();
+  const head = tb.createTHead().insertRow();
+  ["Regime (TDA cluster)", "Records", "Share", "On time", `Within ${cfg.delivery_target_h} h`, "Breakdown rate",
+   "Availability", "Fuel L / record", "Maintenance € / record", "Share of late deliveries"]
+    .forEach((h) => node("th", "", h, head));
+  const body = tb.createTBody();
+  [...f.results].sort((a, b) => b.late_deliveries_share - a.late_deliveries_share).forEach((g) => {
+    const tr = body.insertRow();
+    [g.label, num(g.records), pct(g.share), pct(g.on_time_share), pct(g.within_target_share), pct(g.breakdown_rate),
+     pct(g.availability), num(g.fuel_l_mean, 1), eur(g.maint_cost_mean), pct(g.late_deliveries_share)]
+      .forEach((v) => { tr.insertCell().textContent = v; });
+  });
+
+  const c = f.summary.context || {}, tda = $("tda"); tda.replaceChildren();
+  if (!f.summary.context) node("p", "note", "The sender did not include TDA / ML context.", tda);
+  else {
+    node("p", "note", `Structures: ${num(c.n_clusters)} clusters (regimes), ${num(c.n_noise)} noise records · β₁ = ${c.structure ? num(c.structure.betti_1) : "–"} loops`, tda);
+    node("p", "note", `ML anomaly model: ${num(c.n_anomalies_high)} records score HIGH (≥ 0.60)`, tda);
+    [["Relationships", c.relationships], ["Patterns between regimes", c.patterns]].forEach(([title, items]) => {
+      if (!items || !items.length) return;
+      node("div", "label", title, tda);
+      const ul = node("ul", "plain", undefined, tda);
+      items.forEach((x) => node("li", "", x, ul));
+    });
+    if (c.source) node("p", "note", `Source: ${c.source}`, tda);
+  }
+
+  const a = f.summary.anomalies, an = $("anoms"); an.replaceChildren();
+  if (a.threshold == null) {
+    node("p", "", "All records were used (anomaly exclusion off).", an);
+    node("p", "note", "Switch it on above to leave out operating records the ML model flags. Check its precision first: on the fleet sample it also flags many legitimate records.", an);
+  } else {
+    node("p", "", `${num(a.excluded)} records of operating vehicles with an ML anomaly score ≥ ${a.threshold} were left out of the sampling pool.`, an);
+    if (a.kept_events) node("p", "note", `${num(a.kept_events)} breakdown / absent-driver records were also flagged but kept: they are real events the simulation must include.`, an);
+    if (a.record_ids.length) node("p", "note", a.record_ids.slice(0, 30).join(" · ") + (a.excluded > 30 ? " …" : ""), an);
+  }
+
+  const cv = f.summary.convergence;
+  Plotly.react("c-conv", [
+    { x: cv.n.concat([...cv.n].reverse()), y: cv.hi.concat([...cv.lo].reverse()), fill: "toself", type: "scatter",
+      line: { width: 0 }, fillcolor: rgba(warm, 0.2), hoverinfo: "skip" },
+    { x: cv.n, y: cv.p, type: "scatter", line: { color: warm, width: 2 }, hovertemplate: "%{x:,} scenarios: %{y:.1%}<extra></extra>" }],
+    baseLayout("scenarios (log scale)", "P(meet SLA)", { xaxis: { type: "log", gridcolor: cssVar("--line"), title: { text: "scenarios (log scale)" } },
+      yaxis: { tickformat: ".0%", gridcolor: cssVar("--line") } }), { displaylogo: false, responsive: true });
+  const last = cv.p.length - 1;
+  $("conv-note").textContent = last >= 0
+    ? `After ${num(f.n_completed)} scenarios: P(meet SLA) = ${pct(cv.p[last])}, 95% CI ${pct(cv.lo[last])} – ${pct(cv.hi[last])}.${f.stopped_early ? " Stopped early by the time budget." : ""}`
+    : "";
+}
+
+// ── jobs ───────────────────────────────────────────────────────────────────
+async function refreshJobs(selectId) {
+  const jobs = (await api("/v1/jobs")).filter((j) => j.tests.includes("fleet"));
+  const sel = $("job-select");
+  sel.replaceChildren();
+  if (!jobs.length) sel.add(new Option("— no fleet jobs yet —", ""));
+  for (const j of jobs) {
+    const time = new Date(j.created * 1000).toLocaleTimeString();
+    sel.add(new Option(`${time} · ${j.dataset_id} · ${j.status}`, j.job_id));
+  }
+  if (selectId && jobs.some((j) => j.job_id === selectId)) sel.value = selectId;
+  $("empty").hidden = jobs.length > 0;
+  return jobs;
+}
+
+async function poll(generation) {
+  if (generation !== state.generation) return;
+  try {
+    const st = await api(`/v1/jobs/${state.jobId}`);
+    if (generation !== state.generation) return;
+    if (ACTIVE.includes(st.status)) {
+      const p = (st.progress && st.progress.fleet) || { done: 0, total: 0 };
+      $("progress").hidden = false;
+      $("bar").style.width = p.total ? `${(100 * p.done) / p.total}%` : "0";
+      $("msg").textContent = p.total ? `Simulating: ${num(p.done)} / ${num(p.total)} operating days` : `Job ${st.status}…`;
+      $("rerun").disabled = true;
+      state.timer = setTimeout(() => poll(generation), POLL_MS);
+      return;
+    }
+    $("progress").hidden = true;
+    $("rerun").disabled = false;
+    if (st.status === "cancelled") { $("msg").textContent = "This run was cancelled."; return; }
+    $("msg").textContent = "";
+    const res = await api(`/v1/jobs/${state.jobId}/result`);
+    if (!res.fleet) { showError(`Fleet simulation failed: ${(res.errors && res.errors.fleet) || "no result"}`); return; }
+    render(res.fleet);
+    showError("");
+    refreshJobs(state.jobId);
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+function selectJob(jobId) {
+  clearTimeout(state.timer);
+  state.generation += 1;
+  state.jobId = jobId || null;
+  $("result").hidden = true;
+  $("whatif").hidden = !jobId;
+  const url = new URL(location.href);
+  if (jobId) url.searchParams.set("job", jobId); else url.searchParams.delete("job");
+  history.replaceState(null, "", url);
+  if (jobId) poll(state.generation);
+}
+
+async function rerun() {
+  if (!state.jobId) return;
+  const fleet = {
+    fleet_size: Number($("in-fleet").value) || null,
+    delivery_target_h: Number($("in-target").value) || null,
+    sla_on_time: Number($("in-sla").value) / 100 || null,
+    exclude_anomalies_above: $("in-clean").checked ? 0.6 : null,
+  };
+  for (const k of ["fleet_size", "delivery_target_h", "sla_on_time"]) if (fleet[k] == null) delete fleet[k];
+  $("rerun").disabled = true;
+  try {
+    const job = await api(`/v1/jobs/${state.jobId}/rerun`, { method: "POST", body: JSON.stringify({ n_sims: Number($("in-sims").value) || null, fleet }) });
+    await refreshJobs(job.job_id);
+    selectJob(job.job_id);
+    showError("");
+  } catch (e) {
+    $("rerun").disabled = false;
+    showError(`Re-run failed: ${e.message}`);
+  }
+}
+
+async function init() {
+  $("job-select").addEventListener("change", (e) => selectJob(e.target.value));
+  $("rerun").addEventListener("click", rerun);
+  try {
+    await api("/health");
+    $("health-dot").className = "dot ok";
+  } catch (e) {
+    $("health-dot").className = "dot down";
+    showError(`Service unreachable: ${e.message}`);
+    return;
+  }
+  try {
+    const jobs = await refreshJobs();
+    const wanted = new URLSearchParams(location.search).get("job");
+    const linked = wanted && jobs.find((j) => j.job_id === wanted);
+    if (wanted && !linked) showError(`Fleet job ${wanted} was not found (finished jobs expire after the configured TTL).`);
+    const first = linked || jobs[0];
+    if (first) { $("job-select").value = first.job_id; selectJob(first.job_id); }
+  } catch (e) {
+    showError(`Could not load jobs: ${e.message}`);
+  }
+}
+
+init();

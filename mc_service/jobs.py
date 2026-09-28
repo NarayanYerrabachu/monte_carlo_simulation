@@ -40,6 +40,7 @@ class Job:
     errors: dict[str, str] = field(default_factory=dict)
     cancel: threading.Event = field(default_factory=threading.Event)
     live: dict[str, LiveFeed] = field(default_factory=dict)
+    rerun_input: SimulationRequest | None = None   # fleet request kept for what-if re-runs (until TTL)
 
     def status_view(self) -> dict[str, Any]:
         end = self.finished or time.time()
@@ -115,7 +116,22 @@ class JobStore:
     def _finish(self, job: Job, status: str) -> None:
         job.status = status
         job.finished = time.time()
-        job.request = None                        # drop the input data
+        # Drop the input data — except a fleet request, kept (until the TTL) so the
+        # dashboard can re-run it with other parameters without the sender.
+        if job.request is not None and job.request.fleet is not None:
+            job.rerun_input = job.request
+        job.request = None
+
+    def rerun(self, job: Job, n_sims: int | None, overrides: dict) -> Job:
+        """New job on the same fleet records with changed parameters."""
+        base = job.rerun_input or job.request
+        if base is None or base.fleet is None:
+            raise ValueError("This job has no fleet records to re-run (only fleet jobs can be re-run).")
+        fleet = base.fleet.model_copy(update=overrides)
+        settings = base.settings.model_copy(update={"n_sims": n_sims} if n_sims else {})
+        request = SimulationRequest(contract_version=base.contract_version, dataset_id=base.dataset_id,
+                                    settings=settings, fleet=type(fleet).model_validate(fleet.model_dump()))
+        return self.submit(request)
 
     def _run(self, job: Job) -> None:
         if job.cancel.is_set():

@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from mc_service.api.envelope import EnvelopeRoute
-from mc_service.contract import SimulationRequest
+from mc_service.contract import RerunRequest, SimulationRequest
 from mc_service.jobs import ACTIVE, Job, JobStore
 
 router = APIRouter(prefix="/v1/jobs", route_class=EnvelopeRoute, tags=["jobs"])
@@ -52,6 +52,17 @@ def result(job_id: str, request: Request):
     if job.status == "cancelled":
         raise HTTPException(409, f"Job {job_id} was cancelled")
     return job.response()
+
+
+@router.post("/{job_id}/rerun", status_code=202)
+def rerun(job_id: str, body: RerunRequest, request: Request):
+    """Re-run a fleet job on the same records with new parameters (what-if)."""
+    job = _job(request, job_id)
+    try:
+        new = _store(request).rerun(job, body.n_sims, body.fleet.model_dump(exclude_unset=True))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    return {"job_id": new.id, "status": new.status, "tests": new.tests, "rerun_of": job_id}
 
 
 @router.delete("/{job_id}")

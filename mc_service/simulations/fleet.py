@@ -5,10 +5,14 @@ fuel, maintenance, breakdown, driver availability), plus the TDA cluster
 ("regime") and ML anomaly score of every record, computed by CortXplorer.
 
 Each simulated day:
-  1. draws a historical day (keeps that day's weather, traffic and fuel price together),
+  1. draws a historical day (keeps that day's weather, traffic and fuel price together);
+     its demand is that day's deliveries per vehicle × the vehicles in the data, so the
+     demand does not change when the fleet-size what-if changes,
   2. draws ``fleet_size`` vehicle-records from that day, with replacement,
-  3. aggregates demand, on-time deliveries, deliveries within the target time,
-     breakdowns, fuel, cost and the vehicles required to meet demand.
+  3. serves the demand with them: on-time deliveries = min(demand, Σ each vehicle's observed
+     on-time deliveries). Using the observed on-time deliveries as a vehicle's capacity is a
+     conservative lower bound — with a lighter load a vehicle could only do better,
+  4. aggregates breakdowns, fuel, cost and the vehicles required to meet demand.
 
 Records the ML model flags as anomalies (score ≥ ``exclude_anomalies_above``)
 are left out of the sampling pool when the vehicle operated normally that day:
@@ -69,6 +73,34 @@ def _delivery_time_hist(duration: np.ndarray, completed: np.ndarray, target_h: f
     return {"edges": np.round(edges, 3).tolist(), "share": np.round(share, 6).tolist(), "p_within_target": within}
 
 
+def _spread(x: np.ndarray) -> dict[str, float] | None:
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        return None
+    p5, med, p95 = np.percentile(x, [5, 50, 95])
+    return {"p5": float(p5), "median": float(med), "p95": float(p95)}
+
+
+def observed_inputs(dates: np.ndarray, planned: np.ndarray, breakdown: np.ndarray, driver: np.ndarray,
+                    fuel: np.ndarray, distance: np.ndarray, duration: np.ndarray, price: np.ndarray,
+                    maint: np.ndarray, vehicles: int) -> dict[str, Any]:
+    """What the simulation samples from: per-day and per-record spreads (P5 / median / P95)."""
+    days, inv = np.unique(dates, return_inverse=True)
+    per_day = lambda v, how: (np.bincount(inv, weights=v) / (np.bincount(inv) if how == "mean" else 1))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        per_100 = np.where(distance > 0, fuel / distance * 100, np.nan)
+    return {
+        "records": int(planned.size), "vehicles": vehicles, "days": int(days.size),
+        "daily_demand": _spread(per_day(planned, "sum")),
+        "daily_breakdowns": _spread(per_day(breakdown.astype(float), "sum")),
+        "driver_availability": _spread(per_day(driver.astype(float), "mean")),
+        "fuel_l_per_100km": _spread(per_100),
+        "route_duration_h": _spread(duration[duration > 0]),
+        "fuel_price_eur_l": _spread(per_day(price, "mean")),
+        "maintenance_cost_per_breakdown": _spread(maint[breakdown]),
+    }
+
+
 def run(section: FleetInput, ctx: RunContext) -> dict:
     s = section
     n = len(s.vehicle_id)
@@ -97,16 +129,21 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
     days = sorted(set(dates[pool]))
     by_day = [np.flatnonzero(pool & (dates == d)) for d in days]
     by_day = [ix for ix in by_day if ix.size]
-    fleet = s.fleet_size or len(set(s.vehicle_id))
-    stats = np.column_stack([planned, on_time, within, breakdown, operating, fuel, fuel_cost, maint])
+    vehicles_in_data = len(set(s.vehicle_id))
+    fleet = s.fleet_size or vehicles_in_data
+    # demand of each historical day, per vehicle of the data (robust to excluded records)
+    day_demand = [float(planned[ix].mean()) * vehicles_in_data for ix in by_day]
+    stats = np.column_stack([on_time, within, breakdown, operating, fuel, fuel_cost, maint])
 
     def draw(rng: np.random.Generator) -> np.ndarray:
-        ix = by_day[int(rng.integers(len(by_day)))]
-        pick = ix[rng.integers(ix.size, size=fleet)]
-        tot = stats[pick].sum(axis=0)
-        per_vehicle_on_time = tot[1] / fleet
-        v_req = math.ceil(tot[0] / per_vehicle_on_time) if per_vehicle_on_time > 0 else np.nan
-        return np.append(tot, v_req)
+        d = int(rng.integers(len(by_day)))
+        ix = by_day[d]
+        demand = day_demand[d]
+        tot = stats[rng.choice(ix, size=fleet)].sum(axis=0)
+        served, within_t = min(demand, tot[0]), min(demand, tot[1])
+        per_vehicle = tot[0] / fleet
+        v_req = math.ceil(demand / per_vehicle) if per_vehicle > 0 else np.nan
+        return np.array([demand, served, within_t, *tot[2:], v_req])
 
     res = simulate(draw, ctx.sim_config(chunk_size=max(1, ctx.settings.n_sims // 50)))
     sim = {c: res.null[:, i] for i, c in enumerate(COLS)}
@@ -178,5 +215,9 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
                           "kept_events": flagged_events,
                           "record_ids": [s.record_id[i] for i in np.flatnonzero(excluded)[:50]] if s.record_id else []},
             "convergence": convergence,
+            "inputs": observed_inputs(dates, planned, breakdown, arr(s.driver_available) > 0, fuel,
+                                      arr(s.distance_km), duration, arr(s.fuel_price_eur_l), maint,
+                                      len(set(s.vehicle_id))),
+            "context": s.context,
         },
     }
