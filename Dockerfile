@@ -17,7 +17,8 @@ COPY frontend/ ./frontend/
 
 ENV MPLCONFIGDIR=/tmp/matplotlib
 
-RUN useradd --create-home --uid 1000 mc
+RUN useradd --create-home --uid 1000 mc && mkdir -p /data/jobs && chown mc /data/jobs
+ENV MC_JOB_DIR=/data/jobs
 USER mc
 
 EXPOSE 8020

@@ -159,3 +159,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em; 
 .toolbar .spacer { flex: 1; }
 .status { font-size: 14px; color: var(--muted); }
 .error { padding: 10px 14px; border-radius: 8px; color: var(--critical); border: 1px solid color-mix(in srgb, var(--critical) 40%, transparent); background: color-mix(in srgb, var(--critical) 8%, var(--panel)); }
+
+/* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
+[hidden] { display: none !important; }

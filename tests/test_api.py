@@ -273,3 +273,33 @@ def test_job_report_for_loops_and_errors(client):
     pdf = base64.b64decode(data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "pdf"}))["content"])
     assert pdf.startswith(b"%PDF")
     assert client.post("/v1/reports/job", json={"job_id": "nope"}).status_code == 404
+
+
+def test_finished_jobs_survive_a_restart(tmp_path):
+    from mc_service.contract import SimulationRequest
+    from mc_service.jobs import JobStore
+    from tests.test_fleet_sim import _records
+
+    store = JobStore(workers=1, n_jobs=1, ttl_s=3600, job_dir=str(tmp_path))
+    req = SimulationRequest.model_validate({"contract_version": "1", "dataset_id": "fleet-ds",
+                                            "settings": {"n_sims": 50, "seed": 1}, "fleet": _records()})
+    job = store.submit(req)
+    for _ in range(200):
+        if job.status == "done":
+            break
+        time.sleep(0.02)
+    assert job.status == "done" and (tmp_path / f"{job.id}.json.gz").exists()
+    store.shutdown()
+
+    reloaded = JobStore(workers=1, n_jobs=1, ttl_s=3600, job_dir=str(tmp_path))      # "container restarted"
+    again = reloaded.get(job.id)
+    assert again is not None and again.status == "done"
+    assert again.response()["fleet"]["summary"]["kpi"] == job.response()["fleet"]["summary"]["kpi"]
+    assert again.live["fleet"].snapshot()["n_null"] == 50                           # replay still works
+    with pytest.raises(ValueError, match="Monte Carlo ↗"):                          # records not kept across restarts
+        reloaded.rerun(again, None, {"fleet_size": 5})
+    reloaded.shutdown()
+
+    expired = JobStore(workers=1, n_jobs=1, ttl_s=0.001, job_dir=str(tmp_path))
+    assert expired.get(job.id) is None and not (tmp_path / f"{job.id}.json.gz").exists()
+    expired.shutdown()

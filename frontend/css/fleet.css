@@ -124,3 +124,6 @@ ul.plain { margin: 4px 0 8px; padding-left: 18px; color: var(--muted); }
   .kpis, .tiles { grid-template-columns: minmax(0, 1fr); }
   .field select { max-width: 100%; }
 }
+
+/* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
+[hidden] { display: none !important; }

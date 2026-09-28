@@ -131,6 +131,14 @@ The job report shows:
 at the historical level, so a bigger fleet shows its effect on the same work. The fleet input is kept
 until the job TTL (`MC_JOB_TTL_S`) so re-runs work without CortXplorer.
 
+## Jobs survive restarts
+
+Finished jobs (result and live feed) are saved as gzip JSON in `MC_JOB_DIR`, a Docker volume
+`mc-jobs` in compose, and loaded again at startup. Report and replay links keep working after the
+container is restarted or rebuilt, for `MC_JOB_TTL_S` (default 7 days). A fleet job's records for
+what-if re-runs stay in memory for `MC_RERUN_TTL_S` (1 hour) only, and are not saved; after that,
+send the data again from CortXplorer.
+
 ## Fleet-management report (assumption-based)
 
 `mc_service/fleet/` simulates one operating day of a delivery fleet 10,000 times. The inputs are

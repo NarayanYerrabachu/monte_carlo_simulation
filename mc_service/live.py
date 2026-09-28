@@ -51,6 +51,20 @@ class LiveFeed:
     def add_checkpoint(self, kpis: dict[str, Any]) -> None:
         self.checkpoints.append(to_jsonable(kpis))
 
+    _SAVED = ("observed", "frame", "frames", "null", "series", "checkpoints", "_stat", "_alpha", "_mode")
+
+    def to_dict(self) -> dict[str, Any]:
+        """Everything needed to replay the feed after a restart."""
+        return {k: getattr(self, k) for k in self._SAVED}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> LiveFeed:
+        feed = cls()
+        for k in cls._SAVED:
+            if k in d:
+                setattr(feed, k, d[k])
+        return feed
+
     def running(self) -> dict[str, Any]:
         """Running statistics so far (see the module docstring for the two modes)."""
         null = np.array([v for v in self.null if v is not None], dtype=float)

@@ -181,3 +181,6 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 .zoom button:hover { background: var(--bg); }
 .zoom button:focus-visible { outline: 2px solid var(--observed); outline-offset: 2px; }
 .cloud .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
+[hidden] { display: none !important; }

@@ -15,4 +15,10 @@ services:
       MC_WORKERS:     ${MC_WORKERS:-2}
       MC_N_JOBS:      ${MC_N_JOBS:-1}
       MC_MAX_BODY_MB: ${MC_MAX_BODY_MB:-100}
-      MC_JOB_TTL_S:   ${MC_JOB_TTL_S:-3600}
+      MC_JOB_TTL_S:   ${MC_JOB_TTL_S:-604800}
+      MC_JOB_DIR:     /data/jobs
+    volumes:
+      - mc-jobs:/data/jobs          # finished jobs survive restarts and rebuilds
+
+volumes:
+  mc-jobs:

@@ -14,7 +14,9 @@ class ServiceConfig:
     workers: int          # MC_WORKERS: jobs running in parallel
     n_jobs: int           # MC_N_JOBS: processes per simulation run (1 = in-process)
     max_body_bytes: int   # MC_MAX_BODY_MB: request size limit (before and after gzip)
-    job_ttl_s: float      # MC_JOB_TTL_S: finished jobs kept in memory
+    job_ttl_s: float      # MC_JOB_TTL_S: finished jobs kept (memory and disk), default 7 days
+    job_dir: str | None   # MC_JOB_DIR: where finished jobs are saved so they survive restarts (unset: memory only)
+    rerun_ttl_s: float    # MC_RERUN_TTL_S: how long a fleet job's records stay in memory for what-if re-runs
 
     @classmethod
     def from_env(cls) -> ServiceConfig:
@@ -22,5 +24,7 @@ class ServiceConfig:
             workers=max(1, int(os.getenv("MC_WORKERS", "2"))),
             n_jobs=int(os.getenv("MC_N_JOBS", "1")),
             max_body_bytes=int(float(os.getenv("MC_MAX_BODY_MB", "100")) * 1024 * 1024),
-            job_ttl_s=float(os.getenv("MC_JOB_TTL_S", "3600")),
+            job_ttl_s=float(os.getenv("MC_JOB_TTL_S", str(7 * 24 * 3600))),
+            job_dir=os.getenv("MC_JOB_DIR") or None,
+            rerun_ttl_s=float(os.getenv("MC_RERUN_TTL_S", "3600")),
         )

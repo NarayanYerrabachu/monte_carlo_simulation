@@ -40,7 +40,8 @@ class NoCacheStatic(StaticFiles):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.jobs = JobStore(workers=config.workers, n_jobs=config.n_jobs, ttl_s=config.job_ttl_s)
+    app.state.jobs = JobStore(workers=config.workers, n_jobs=config.n_jobs, ttl_s=config.job_ttl_s,
+                              job_dir=config.job_dir, rerun_ttl_s=config.rerun_ttl_s)
     yield
     app.state.jobs.shutdown()
 

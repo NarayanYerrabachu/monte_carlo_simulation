@@ -351,7 +351,11 @@ async function init() {
     const jobs = await refreshJobs();
     const wanted = new URLSearchParams(location.search).get("job");
     const linked = wanted && jobs.find((j) => j.job_id === wanted);
-    if (wanted && !linked) showError(`Fleet job ${wanted} was not found (finished jobs expire after the configured TTL).`);
+    if (wanted && !linked) {
+      showError(`Fleet job ${wanted} is not available (it expired, or it was started before the service kept jobs across restarts). `
+        + "Press Monte Carlo ↗ in CortXplorer to run the simulation again; when it is done, Generate report opens it here.");
+      $("empty").hidden = true;
+    }
     const first = linked || jobs[0];
     if (first) { $("job-select").value = first.job_id; selectJob(first.job_id); }
   } catch (e) {
