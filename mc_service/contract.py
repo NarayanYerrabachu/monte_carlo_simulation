@@ -46,7 +46,7 @@ def _members_in_range(node_members: list[list[int]], n: int) -> None:
 
 
 class SimSettings(_Model):
-    n_sims: int = Field(200, ge=19, le=100_000)          # ≥ 19 so p can reach 0.05
+    n_sims: int = Field(200, ge=19, le=100_000)          # ≥ 19 so p can reach 0.05 (significant: p ≤ α)
     n_sims_perm: int = Field(999, ge=19, le=100_000)     # relationship permutations (BH needs small p)
     seed: int = Field(42, ge=0)
     alpha: float = Field(0.05, gt=0, le=0.5)

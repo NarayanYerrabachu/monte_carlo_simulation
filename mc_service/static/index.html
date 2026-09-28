@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monte Carlo Live</title>
+  <link rel="stylesheet" href="/static/viewer.css">
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="dot" id="health-dot"></span>
+      <h1>Monte Carlo <span class="muted">· live</span></h1>
+      <span class="chip" id="health">connecting…</span>
+    </div>
+    <div class="controls">
+      <label class="field">
+        <span>Job</span>
+        <select id="job-select"><option value="">— no jobs yet —</option></select>
+      </label>
+      <button id="refresh" class="ghost" title="Reload job list">↻</button>
+      <span class="sep"></span>
+      <label class="field">
+        <span>Synthetic data</span>
+        <select id="syn-shape">
+          <option value="circle">Noisy circle (real loop)</option>
+          <option value="blob">Correlated blob (no loop)</option>
+          <option value="two">Two rings (two loops)</option>
+        </select>
+      </label>
+      <label class="field small"><span>Simulations</span><input id="syn-nsims" type="number" min="19" max="5000" value="200"></label>
+      <label class="field small"><span>Sample</span><input id="syn-sample" type="number" min="50" max="1500" value="400"></label>
+      <button id="run" class="primary">Run simulation</button>
+      <button id="cancel" class="ghost" disabled>Cancel</button>
+    </div>
+  </header>
+
+  <div id="error" class="error" hidden></div>
+
+  <main class="grid">
+    <section class="card cloud">
+      <div class="card-head">
+        <h2>Data vs. random surrogate</h2>
+        <label class="toggle"><input id="rotate" type="checkbox" checked> rotate</label>
+      </div>
+      <p class="hint">Observed points (blue) and the structureless surrogate the current simulation ran on (orange).</p>
+      <div id="plot3d" class="plot"></div>
+    </section>
+
+    <section class="side">
+      <div class="stats">
+        <div class="stat"><span class="label">Simulations</span><span class="value" id="st-n">–</span></div>
+        <div class="stat"><span class="label">Running p-value</span><span class="value" id="st-p">–</span></div>
+        <div class="stat"><span class="label">Noise band</span><span class="value" id="st-band">–</span></div>
+        <div class="stat"><span class="label">Longest loop</span><span class="value" id="st-top">–</span></div>
+      </div>
+      <div class="progress"><div id="progress-bar"></div></div>
+      <div class="status-line" id="status-line">Pick a job or run a synthetic simulation.</div>
+
+      <section class="card hist">
+        <div class="card-head"><h2>Null distribution <span class="muted" id="hist-sub"></span></h2></div>
+        <div id="plothist" class="plot"></div>
+      </section>
+    </section>
+
+    <section class="card table-card">
+      <div class="card-head"><h2>Loops <span class="muted" id="verdict"></span></h2></div>
+      <div class="table-wrap">
+        <table id="loops-table">
+          <thead><tr><th>#</th><th>Birth</th><th>Death</th><th>Persistence</th><th>p-value</th><th>Verdict</th></tr></thead>
+          <tbody><tr><td colspan="6" class="muted">Results appear when the job finishes.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/viewer.js"></script>
+</body>
+</html>

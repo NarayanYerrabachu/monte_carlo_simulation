@@ -51,12 +51,30 @@ Every response uses the envelope `{status, data, message}`, the same as the demo
 | `GET` | `/v1/jobs/{id}` | Status (`queued`, `running`, `done`, `failed` or `cancelled`) and per-test progress |
 | `GET` | `/v1/jobs/{id}/result` | `SimulationResponse`. Returns 409 while the job is still running or after it was cancelled |
 | `DELETE` | `/v1/jobs/{id}` | Cancel the job |
+| `GET` | `/v1/jobs` | All jobs, newest first |
+| `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
+| `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
 
 The request format is defined in [mc_service/contract.py](mc_service/contract.py) (`contract_version` "1").
 Configuration is in [.env.example](.env.example).
 
+## Live viewer
+
+Open http://localhost:8020/ and click **Run simulation**. The page submits seeded synthetic data (a
+noisy circle, a correlated blob or two rings) and then shows live:
+
+- a rotating 3D view of the observed points (blue) next to the surrogate that the current simulation
+  ran on (orange)
+- the null distribution filling up, with lines for the observed value, the 95% noise band and the
+  demo's heuristic
+- the running p-value, then the loop table with a verdict for each loop once the job finishes
+
+Jobs the demo submits show up in the job picker too.
+
 ## Status
 
-Phase 1 is done: the service, request/response format, job API, simulation engine and Docker image.
-The four tests arrive in phases 2–5. Until then a requested test reports `"not implemented yet"`.
+- Phase 1 is done: the service, request/response format, job API, simulation engine and Docker image.
+- Phase 2 is done: the loop (H1) significance test and the live viewer.
+- The relationship, pre-event and stability tests arrive in phases 3–5. Until then, requesting one of
+  them reports `"not implemented yet"`.
 See [docs/implementations/monte-carlo-simulation.md](docs/implementations/monte-carlo-simulation.md).

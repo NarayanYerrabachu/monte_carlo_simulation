@@ -17,6 +17,7 @@ from typing import Any
 
 from mc_service.contract import SimulationRequest, SimulationResponse
 from mc_service.engine import Cancelled
+from mc_service.live import LiveFeed
 from mc_service.serialize import to_jsonable
 from mc_service.simulations import RUNNERS, RunContext
 
@@ -38,6 +39,7 @@ class Job:
     results: dict[str, Any] = field(default_factory=dict)
     errors: dict[str, str] = field(default_factory=dict)
     cancel: threading.Event = field(default_factory=threading.Event)
+    live: dict[str, LiveFeed] = field(default_factory=dict)
 
     def status_view(self) -> dict[str, Any]:
         end = self.finished or time.time()
@@ -45,11 +47,15 @@ class Job:
             "job_id": self.id,
             "dataset_id": self.dataset_id,
             "status": self.status,
+            "created": self.created,
             "tests": self.tests,
             "progress": self.progress,
             "errors": self.errors,
             "elapsed_s": round(end - self.created, 3),
         }
+
+    def live_view(self, since: int = 0) -> dict[str, Any]:
+        return {**self.status_view(), "live": {t: feed.snapshot(since) for t, feed in self.live.items()}}
 
     def response(self) -> dict[str, Any]:
         return SimulationResponse(dataset_id=self.dataset_id, job_id=self.id,
@@ -67,7 +73,8 @@ class JobStore:
     def submit(self, request: SimulationRequest) -> Job:
         tests = request.requested_tests()
         job = Job(id=uuid.uuid4().hex, dataset_id=request.dataset_id, tests=tests, request=request,
-                  progress={t: {"done": 0, "total": 0} for t in tests})
+                  progress={t: {"done": 0, "total": 0} for t in tests},
+                  live={t: LiveFeed() for t in tests})
         with self._lock:
             self._purge()
             self._jobs[job.id] = job
@@ -78,6 +85,11 @@ class JobStore:
         with self._lock:
             self._purge()
             return self._jobs.get(job_id)
+
+    def list_jobs(self) -> list[Job]:
+        with self._lock:
+            self._purge()
+            return sorted(self._jobs.values(), key=lambda j: j.created, reverse=True)
 
     def cancel(self, job_id: str) -> Job | None:
         job = self.get(job_id)
@@ -122,7 +134,7 @@ class JobStore:
                 job.progress[_t] = {"done": done, "total": total}
 
             ctx = RunContext(settings=request.settings, n_jobs=self._n_jobs,
-                             cancel=job.cancel, progress=progress)
+                             cancel=job.cancel, progress=progress, live=job.live[test])
             try:
                 job.results[test] = to_jsonable(runner(getattr(request, test), ctx))
             except Cancelled:

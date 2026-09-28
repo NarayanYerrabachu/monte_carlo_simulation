@@ -1,9 +1,11 @@
 """Monte Carlo engine: seeded simulation runs, empirical p-values, BH, CIs.
 
 Determinism: simulation *i* always draws from
-``default_rng(SeedSequence(seed).spawn(n_sims)[i])`` — the result does not
-depend on worker count or chunking. Only a run cut short by the time budget
-can differ (fewer completed simulations), and it says so (``stopped_early``).
+``default_rng(spawn_seeds(seed, n_sims)[i])`` — the result does not depend on
+worker count or chunk size. Only a run cut short by the time budget can differ
+(fewer completed simulations), and it says so (``stopped_early``). Because the
+seeds are index-based, a caller can rebuild the exact random input of
+simulation *i* afterwards (the live viewer does this to show a surrogate).
 """
 from __future__ import annotations
 
@@ -16,8 +18,8 @@ from typing import Any
 import numpy as np
 from joblib import Parallel, delayed
 
-# Simulations per scheduling step. Fixed (not derived from n_jobs) so the
-# cancel / time-budget checkpoints are the same for any worker count.
+# Default simulations per scheduling step: cancel / time-budget checks and the
+# progress + ``on_chunk`` callbacks happen between chunks.
 CHUNK_SIZE = 32
 
 
@@ -33,6 +35,10 @@ class SimConfig:
     max_seconds: float | None = None
     progress: Callable[[int, int], None] | None = None
     cancel: threading.Event | None = None
+    chunk_size: int = CHUNK_SIZE
+    # Called after each chunk with (index of its first simulation, its draws);
+    # used to stream the null distribution to the live viewer.
+    on_chunk: Callable[[int, np.ndarray], None] | None = None
 
 
 @dataclass
@@ -41,6 +47,11 @@ class SimResult:
     n_completed: int
     elapsed_s: float
     stopped_early: bool
+
+
+def spawn_seeds(seed: int, n_sims: int) -> list[np.random.SeedSequence]:
+    """The per-simulation seeds ``simulate`` uses (index i → simulation i)."""
+    return np.random.SeedSequence(seed).spawn(n_sims)
 
 
 def _draw(draw_null: Callable[[np.random.Generator], Any], seed: np.random.SeedSequence) -> np.ndarray:
@@ -54,23 +65,27 @@ def simulate(draw_null: Callable[[np.random.Generator], Any], cfg: SimConfig) ->
     ``n_jobs > 1`` it runs in loky worker processes, so it must be picklable
     (closures are fine — loky uses cloudpickle).
     """
-    seeds = np.random.SeedSequence(cfg.seed).spawn(cfg.n_sims)
+    seeds = spawn_seeds(cfg.seed, cfg.n_sims)
+    step = max(1, cfg.chunk_size)
     start = time.monotonic()
     draws: list[np.ndarray] = []
     stopped_early = False
     parallel = Parallel(n_jobs=cfg.n_jobs, backend="loky") if cfg.n_jobs != 1 else None
 
-    for lo in range(0, cfg.n_sims, CHUNK_SIZE):
+    for lo in range(0, cfg.n_sims, step):
         if cfg.cancel is not None and cfg.cancel.is_set():
             raise Cancelled()
         if cfg.max_seconds is not None and draws and time.monotonic() - start > cfg.max_seconds:
             stopped_early = True
             break
-        chunk = seeds[lo:lo + CHUNK_SIZE]
+        chunk = seeds[lo:lo + step]
         if parallel is None:
-            draws.extend(_draw(draw_null, s) for s in chunk)
+            new = [_draw(draw_null, s) for s in chunk]
         else:
-            draws.extend(parallel(delayed(_draw)(draw_null, s) for s in chunk))
+            new = parallel(delayed(_draw)(draw_null, s) for s in chunk)
+        draws.extend(new)
+        if cfg.on_chunk is not None:
+            cfg.on_chunk(lo, np.stack(new))
         if cfg.progress is not None:
             cfg.progress(len(draws), cfg.n_sims)
 

@@ -34,11 +34,11 @@ Mirror the demo's `backend/api/envelope.py`: every response `{status, data, mess
 `MC_MAX_BODY_MB`.
 
 **DoD:**
-- [ ] `/health` → `{status:"ok", data:{version, contract_version:"1"}}`
-- [ ] `POST /v1/jobs` 202; 422 on invalid; 413 on too large
-- [ ] `GET /v1/jobs/{id}` status + per-test progress; 404 unknown/expired
-- [ ] `GET /v1/jobs/{id}/result` 409 until done, 200 with `SimulationResponse` after
-- [ ] `DELETE /v1/jobs/{id}` sets cancel flag; job ends `cancelled`
+- [x] `/health` → `{status:"ok", data:{version, contract_version:"1"}}`
+- [x] `POST /v1/jobs` 202; 422 on invalid; 413 on too large
+- [x] `GET /v1/jobs/{id}` status + per-test progress; 404 unknown/expired
+- [x] `GET /v1/jobs/{id}/result` 409 until done, 200 with `SimulationResponse` after
+- [x] `DELETE /v1/jobs/{id}` sets cancel flag; job ends `cancelled`
 
 ### Task 1.3 – Contract
 Models from the parent tracker. Validators: at least one test section; all per-record arrays in a

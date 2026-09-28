@@ -3,6 +3,7 @@ import json
 import threading
 import time
 
+import numpy as np
 import pytest
 from fastapi.testclient import TestClient
 
@@ -174,3 +175,36 @@ def test_body_limit_413(client, monkeypatch):
     finally:
         monkeypatch.undo()
         main.app.middleware_stack = None
+
+
+def test_real_loops_runner_and_live_endpoint(client):
+    rng = np.random.default_rng(0)
+    t = rng.uniform(0, 2 * np.pi, 300)
+    X = np.column_stack([np.cos(t), np.sin(t), rng.normal(scale=0.05, size=300)]).tolist()
+    req = _loops_request(loops={"X": X, "sample_n": 150}, settings={"n_sims": 19, "seed": 3})
+    job_id = data(client.post("/v1/jobs", json=req))["job_id"]
+    assert _wait(client, job_id)["status"] == "done"
+
+    live = data(client.get(f"/v1/jobs/{job_id}/live"))
+    feed = live["live"]["loops"]
+    assert live["status"] == "done" and feed["n_null"] == 19
+    assert feed["observed"]["points"] and feed["frame"]["index"] == 18
+    assert data(client.get(f"/v1/jobs/{job_id}/live?since=19"))["live"]["loops"]["null"] == []
+
+    res = data(client.get(f"/v1/jobs/{job_id}/result"))
+    assert res["loops"]["summary"]["n_significant"] == 1
+    assert res["loops"]["results"][0]["p_value"] == pytest.approx(feed["running"]["p_value"])
+
+
+def test_list_jobs_newest_first(client, fake_loops):
+    ids = [data(client.post("/v1/jobs", json=_loops_request(dataset_id=f"d{i}")))["job_id"] for i in range(2)]
+    listed = [j["job_id"] for j in data(client.get("/v1/jobs"))]
+    assert listed.index(ids[1]) < listed.index(ids[0])
+
+
+def test_viewer_page_served(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "text/html" in r.headers["content-type"]
+    assert "viewer.js" in r.text
+    js = client.get("/static/viewer.js")
+    assert js.status_code == 200 and js.headers["cache-control"] == "no-cache"

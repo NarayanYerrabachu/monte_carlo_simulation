@@ -1,7 +1,7 @@
 """Job API: submit a simulation request, poll it, fetch the result, cancel it."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from mc_service.api.envelope import EnvelopeRoute
 from mc_service.contract import SimulationRequest
@@ -27,9 +27,21 @@ def submit(body: SimulationRequest, request: Request):
     return {"job_id": job.id, "status": job.status, "tests": job.tests}
 
 
+@router.get("")
+def list_jobs(request: Request):
+    return [job.status_view() for job in _store(request).list_jobs()]
+
+
 @router.get("/{job_id}")
 def status(job_id: str, request: Request):
     return _job(request, job_id).status_view()
+
+
+@router.get("/{job_id}/live")
+def live(job_id: str, request: Request, since: int = Query(0, ge=0)):
+    """Status plus, per test, the null values from index ``since`` on and the
+    latest surrogate. Poll with ``since`` = the previous ``n_null``."""
+    return _job(request, job_id).live_view(since)
 
 
 @router.get("/{job_id}/result")

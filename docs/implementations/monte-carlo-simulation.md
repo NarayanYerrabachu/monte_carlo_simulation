@@ -142,6 +142,9 @@ the results to the UI.
 | `GET` | `/v1/jobs/{job_id}` | `{job_id, status: queued\|running\|done\|failed\|cancelled, progress: {test: {done, total}}, error?}` |
 | `GET` | `/v1/jobs/{job_id}/result` | `SimulationResponse` (409 until done) |
 | `DELETE` | `/v1/jobs/{job_id}` | cancel (used when the demo swaps datasets) |
+| `GET` | `/v1/jobs` | all jobs, newest first (status view) |
+| `GET` | `/v1/jobs/{job_id}/live?since=N` | status + per test: null values from index N, latest surrogate, server-computed running p-value and noise band |
+| `GET` | `/` | live viewer (static page, Plotly 3D) |
 
 Responses use the same `{status, data, message}` envelope as the demo so the demo client can reuse its
 handling. Payloads are gzip-encoded JSON (`Content-Encoding: gzip`); 25k × 10 floats ≈ 2 MB raw.
@@ -247,13 +250,15 @@ Demo:
 - Service follows the demo's style: routers in `api/`, logic in `services/`, envelope responses.
 - Seeds: always `SeedSequence(seed).spawn(...)`; never global `np.random`.
 - p-values include the +1 correction (never 0); `n_completed` is always reported.
+- Significant means **p ≤ α** (standard Monte Carlo rule: exact size α when (n+1)·α is an integer).
+- The viewer draws only what the service sends; statistics (running p, noise band) are computed server-side.
 
 ## Phase Summary
 
 | Phase | Repo | Scope | Status |
 |---|---|---|---|
 | [1 – Service skeleton, contract & engine](monte-carlo-simulation/phase-1-service-engine.md) | service | FastAPI app, envelope, job store + workers, pydantic contract, `simulate`/p/BH/CI, Dockerfile | ✅ |
-| [2 – Loop significance](monte-carlo-simulation/phase-2-loop-significance.md) | service | Surrogate nulls, ripser, noise band, per-loop p | ⏸️ |
+| [2 – Loop significance](monte-carlo-simulation/phase-2-loop-significance.md) | service | Surrogate nulls, ripser, noise band, per-loop p + live 3D viewer | ✅ |
 | [3 – Relationship permutation](monte-carlo-simulation/phase-3-relationship-permutation.md) | service | Vectorised lift, (block) permutation, BH | ⏸️ |
 | [4 – Pre-event pseudo-events](monte-carlo-simulation/phase-4-pre-event.md) | service | Pseudo-event sampler, band null distributions | ⏸️ |
 | [5 – Stability](monte-carlo-simulation/phase-5-stability.md) | service | Anomaly bootstrap, Mapper perturbation | ⏸️ |
