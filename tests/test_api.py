@@ -208,3 +208,13 @@ def test_viewer_page_served(client):
     assert "viewer.js" in r.text
     js = client.get("/js/viewer.js")
     assert js.status_code == 200 and js.headers["cache-control"] == "no-cache"
+
+
+def test_fleet_job_end_to_end(client):
+    from tests.test_fleet_sim import _records
+    req = {"contract_version": "1", "dataset_id": "fleet-ds", "settings": {"n_sims": 100, "seed": 1},
+           "fleet": _records()}
+    job_id = data(client.post("/v1/jobs", json=req))["job_id"]
+    assert _wait(client, job_id)["status"] == "done"
+    res = data(client.get(f"/v1/jobs/{job_id}/result"))
+    assert res["fleet"]["summary"]["kpi"]["p_meet_sla"] > 0.9 and res["errors"] == {}

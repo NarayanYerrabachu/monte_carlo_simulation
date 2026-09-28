@@ -11,12 +11,17 @@ Demo (8010) ── POST /v1/jobs {TDA + statistical data} ──▶ Monte Carlo 
             ◀── GET /v1/jobs/{id}/result {p-values, CIs} ─
 ```
 
-The four tests:
+Tests:
 
 - **Loop (H1) significance.** Compares persistence against surrogate data and gives an empirical noise band.
-- **Relationship permutation.** Gives a p-value and a Benjamini–Hochberg (BH) q-value per topological label pair.
-- **Pre-event pseudo-events.** Gives a p-value per band and metric against random event windows.
-- **Anomaly and Mapper stability.** Uses bootstrap sampling, reseeding and parameter perturbation.
+- **Fleet operations (`fleet`).** Takes real fleet records (one per vehicle and day) with their TDA
+  regime and ML anomaly score, as sent by CortXplorer. Each simulated day draws a real historical day
+  and resamples its vehicle records. It returns the probability of meeting the on-time SLA, the
+  delivery-time distribution against a target, vehicles required (with the 95th percentile), fleet
+  availability, fuel, breakdown risk and maintenance cost, broken down per TDA regime. Excluding ML
+  anomalies is optional, and breakdown or absent-driver records are never excluded.
+- **Planned (phases 3–5):** relationship permutation, pre-event pseudo-events, and anomaly and Mapper
+  stability.
 
 ## Run
 
@@ -85,7 +90,8 @@ noisy circle, a correlated blob or two rings) and then shows live:
   demo's heuristic
 - the running p-value, then the loop table with a verdict for each loop once the job finishes
 
-Jobs the demo submits show up in the job picker too.
+Jobs the demo submits show up in the job picker too. `/?job=<id>` opens a specific job; the
+demo's **Open live view** link uses it.
 
 ## Fleet-management report
 

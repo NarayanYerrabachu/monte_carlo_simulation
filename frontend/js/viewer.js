@@ -358,8 +358,12 @@ async function init() {
   }
 
   const jobs = await refreshJobs();
+  // ?job=<id> (e.g. from CortXplorer's "Open live 3D view") selects that job
+  const wanted = new URLSearchParams(location.search).get("job");
+  const linked = wanted && jobs.find((j) => j.job_id === wanted);
+  if (wanted && !linked) showError(`Job ${wanted} was not found (finished jobs expire after the configured TTL).`);
   const active = jobs.find((j) => ACTIVE.includes(j.status));
-  const first = active || jobs[0];
+  const first = linked || active || jobs[0];
   if (first) {
     $("job-select").value = first.job_id;
     selectJob(first.job_id);

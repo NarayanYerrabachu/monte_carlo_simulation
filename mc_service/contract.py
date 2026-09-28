@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mc_service import CONTRACT_VERSION
 
-TEST_NAMES = ("loops", "relationships", "pre_event", "anomaly_stability", "mapper_stability")
+TEST_NAMES = ("loops", "relationships", "pre_event", "anomaly_stability", "mapper_stability", "fleet")
 
 
 class _Model(BaseModel):
@@ -161,6 +161,46 @@ class MapperInput(_Model):
         return self
 
 
+class FleetInput(_Model):
+    """Fleet records (one per vehicle and day) with their TDA regime and ML anomaly score."""
+    record_id: list[str] | None = None
+    vehicle_id: list[str]
+    date: list[str]                                        # day of the record; days are sampled as blocks
+    regime: list[int]                                      # TDA cluster of the record (-1 = noise)
+    anomaly_score: list[float | None] | None = None        # ML anomaly score 0–1
+    deliveries_planned: list[float]
+    deliveries_completed: list[float]
+    deliveries_on_time: list[float]
+    route_duration_h: list[float]
+    distance_km: list[float]
+    fuel_l: list[float]
+    fuel_price_eur_l: list[float]
+    maintenance_cost_eur: list[float]
+    breakdown: list[int]
+    driver_available: list[int]
+    regime_labels: dict[str, str] | None = None            # cluster id → label from the TDA themes
+    fleet_size: int | None = Field(None, ge=1)             # default: number of distinct vehicles
+    delivery_target_h: float = Field(4.0, gt=0)
+    sla_on_time: float = Field(0.95, gt=0, le=1)           # a day meets the SLA at this on-time share
+    breakdown_alert: int | None = Field(None, ge=0)        # report P(breakdowns > alert); default: P90
+    exclude_anomalies_above: float | None = Field(0.6, ge=0, le=1)
+
+    @model_validator(mode="after")
+    def _check(self):
+        n = len(self.vehicle_id)
+        if n == 0:
+            raise ValueError("vehicle_id is empty")
+        _same_len(n, record_id=self.record_id, date=self.date, regime=self.regime, anomaly_score=self.anomaly_score,
+                  deliveries_planned=self.deliveries_planned, deliveries_completed=self.deliveries_completed,
+                  deliveries_on_time=self.deliveries_on_time, route_duration_h=self.route_duration_h,
+                  distance_km=self.distance_km, fuel_l=self.fuel_l, fuel_price_eur_l=self.fuel_price_eur_l,
+                  maintenance_cost_eur=self.maintenance_cost_eur, breakdown=self.breakdown,
+                  driver_available=self.driver_available)
+        if sum(self.deliveries_planned) <= 0:
+            raise ValueError("deliveries_planned sums to 0 — nothing to simulate")
+        return self
+
+
 class SimulationRequest(_Model):
     contract_version: Literal["1"]
     dataset_id: str = Field(min_length=1)                # echoed back; the demo drops stale results
@@ -170,6 +210,7 @@ class SimulationRequest(_Model):
     pre_event: PreEventInput | None = None
     anomaly_stability: AnomalyInput | None = None
     mapper_stability: MapperInput | None = None
+    fleet: FleetInput | None = None
 
     @model_validator(mode="after")
     def _check(self):
@@ -200,4 +241,5 @@ class SimulationResponse(_Model):
     pre_event: TestResult | None = None
     anomaly_stability: TestResult | None = None
     mapper_stability: TestResult | None = None
+    fleet: TestResult | None = None
     errors: dict[str, str] = Field(default_factory=dict)  # per test that failed: why
