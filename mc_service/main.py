@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -48,6 +49,7 @@ app = FastAPI(title="CortXplorer Monte Carlo Service", version=__version__, life
 app.router.route_class = EnvelopeRoute
 install_error_handlers(app)
 app.add_middleware(BodyLimitMiddleware, max_bytes=config.max_body_bytes)
+app.add_middleware(GZipMiddleware, minimum_size=2048)      # live feeds of 100k-day runs are MBs of JSON
 app.include_router(jobs_api.router)
 app.include_router(reports_api.router)
 app.mount("/js", NoCacheStatic(directory=FRONTEND_DIR / "js"), name="js")

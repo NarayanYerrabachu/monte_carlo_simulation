@@ -21,7 +21,7 @@
     <div class="toolbar">
       <label class="field">
         <span>Job</span>
-        <select id="job-select"><option value="">— no finished jobs yet —</option></select>
+        <select id="job-select"><option value="">— no fleet jobs yet —</option></select>
       </label>
       <button id="dl-pdf" type="button" disabled>Download PDF</button>
       <button id="dl-xlsx" type="button" disabled>Download Excel</button>
@@ -36,15 +36,8 @@
     </div>
 
     <div id="empty" class="notice" hidden>
-      No finished simulation yet. In CortXplorer, load a dataset (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. It runs in the live viewer; when it is done, <b>Generate report ↗</b> opens it here.
+      No finished fleet simulation yet. In CortXplorer, load a fleet table (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. It runs in the live viewer; when it is done, <b>Generate report ↗</b> opens it here.
     </div>
-
-    <section class="card" id="loops-report" hidden>
-      <h3 id="loops-title">Are the loops real?</h3>
-      <p class="note" id="loops-sub"></p>
-      <div class="chart" id="c-loops"></div>
-      <div class="table-wrap"><table id="loops-table"></table></div>
-    </section>
     <div id="error" class="error" hidden></div>
 
     <section class="card" id="whatif" hidden>
@@ -54,7 +47,7 @@
         <label class="field"><span>Fleet size (vehicles)</span><input id="in-fleet" type="number" min="1" step="1"></label>
         <label class="field"><span>Delivery target (h)</span><input id="in-target" type="number" min="0.5" max="24" step="0.5"></label>
         <label class="field"><span>On-time SLA (%)</span><input id="in-sla" type="number" min="50" max="100" step="1"></label>
-        <label class="field"><span>Scenarios</span><input id="in-sims" type="number" min="1000" max="50000" step="1000"></label>
+        <label class="field"><span>Scenarios</span><input id="in-sims" type="number" min="1000" max="100000" step="1000"></label>
         <label class="check"><input id="in-clean" type="checkbox"> Exclude operating records the ML model flags as anomalies (score ≥ 0.6)</label>
         <button id="rerun" class="primary" type="button">Re-run simulation</button>
       </div>

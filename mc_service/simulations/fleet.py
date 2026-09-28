@@ -173,12 +173,14 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
     def on_chunk(lo: int, draws: np.ndarray) -> None:
         demand_col, served_col = COLS.index("demand"), COLS.index("on_time")
         col = {c: draws[:, i] for i, c in enumerate(COLS)}
+        # rounded to what the live charts need (KPIs below use full precision)
         ctx.live.add_series({
-            "vehicles_required": col["vehicles_required"].tolist(), "maint_cost": col["maint_cost"].tolist(),
-            "fuel_l": col["fuel_l"].tolist(), "breakdowns": col["breakdowns"].tolist(),
-            "within_share": (col["within_target"] / col["demand"]).tolist(),
+            "vehicles_required": col["vehicles_required"].tolist(),
+            "maint_cost": np.round(col["maint_cost"]).tolist(),
+            "fuel_l": np.round(col["fuel_l"]).tolist(), "breakdowns": col["breakdowns"].tolist(),
+            "within_share": np.round(col["within_target"] / col["demand"], 4).tolist(),
         })
-        ctx.live.add_null((draws[:, served_col] / draws[:, demand_col]).tolist())
+        ctx.live.add_null(np.round(draws[:, served_col] / draws[:, demand_col], 4).tolist())
         done.append(draws)
         a = np.concatenate(done)
         c = {k: a[:, i] for i, k in enumerate(COLS)}

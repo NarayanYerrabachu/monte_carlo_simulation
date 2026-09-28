@@ -72,7 +72,7 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/v1/jobs` | All jobs, newest first |
 | `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
 | `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
-| `GET` | `/?job=<id>` | **Live viewer**: CortXplorer's Monte Carlo ↗ lands here. Fleet jobs play as a live dashboard; loop jobs show the 3D surrogate view |
+| `GET` | `/?job=<id>` | **Live viewer** (fleet): CortXplorer's Monte Carlo ↗ lands here, and the simulated days play out as a live dashboard |
 | `GET` | `/report?job=<id>` | **Job report**: HTML view of a finished job, with Download PDF / Excel and what-if re-runs (`/fleet?job=` is the same page) |
 | `POST` | `/v1/reports/job` | `{"job_id": "…", "format": "json" \| "pdf" \| "xlsx"}`: the report of a finished job; files come back as base64 in the JSON |
 | `GET` | `/report` | Assumption-based fleet report (no job), with PDF and Excel download buttons |
@@ -107,8 +107,9 @@ demo's **Open live view** link uses it.
    - charts: vehicle requirement, delivery outcome, maintenance cost and on-time share
    - the records in 3D, coloured by TDA regime, with the vehicles of the day being simulated
 
-   10,000 days compute in under a second, so the viewer replays them over a few seconds; it says so,
-   and **Replay** repeats it. The tiles and lines always show the server's running KPIs.
+   100,000 days compute in a few seconds, so the viewer plays the simulated days back over 15, 30
+   or 60 seconds (the **Animation** setting), with **Pause** and **Replay**. It shows how many days
+   have been revealed, and the tiles and lines always show the service's running KPIs for that point.
 3. When it is done, **Generate report ↗** opens `/report?job=<id>`, the full report, with
    **Download PDF** and **Download Excel** (built by `mc_service/job_report.py`).
 

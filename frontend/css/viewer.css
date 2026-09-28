@@ -149,3 +149,10 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
   .sep { display: none; }
   .field select { max-width: 100%; }
 }
+
+/* fleet-only live viewer layout */
+.page { max-width: 1440px; margin: 0 auto; padding: 16px 20px 28px; display: flex; flex-direction: column; gap: 16px; }
+.page .cloud .plot { min-height: 460px; }
+.notice { margin: 16px 20px 0; padding: 16px; border-radius: 10px; border: 1px dashed var(--line); background: var(--panel); color: var(--muted); }
+.notice code { font-size: .92em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+@media (max-width: 900px) { .page { padding: 12px 16px 24px; } .page .cloud .plot { min-height: 340px; } }
