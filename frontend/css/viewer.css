@@ -174,3 +174,10 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 .notice { margin: 16px 20px 0; padding: 16px; border-radius: 10px; border: 1px dashed var(--line); background: var(--panel); color: var(--muted); }
 .notice code { font-size: .92em; background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 @media (max-width: 900px) { .page { padding: 12px 16px 24px; } .page .cloud .plot { min-height: 340px; } }
+
+/* zoom controls on every chart */
+.card-head .zoom { display: inline-flex; gap: 4px; }
+.zoom button { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.zoom button:hover { background: var(--bg); }
+.zoom button:focus-visible { outline: 2px solid var(--observed); outline-offset: 2px; }
+.cloud .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

@@ -69,7 +69,7 @@ function histChart(id, h, color, xTitle, lines) {
   Plotly.react(id, [{ type: "bar", x: mids, y: h.counts.map((c) => c / total), width, marker: { color },
       hovertemplate: "%{x:,.0f}: %{y:.1%}<extra></extra>" }],
     baseLayout(xTitle, "probability", { shapes: lines.map((l) => l.shape), annotations: lines.map((l) => l.note) }),
-    { displaylogo: false, responsive: true });
+    { displaylogo: false, responsive: true, scrollZoom: true });
 }
 
 // ── render ─────────────────────────────────────────────────────────────────
@@ -151,7 +151,7 @@ function render(f) {
         shapes: [tgt.shape],
         annotations: [tgt.note, { xref: "paper", yref: "paper", x: 1, y: 0.92, xanchor: "right", showarrow: false,
           text: `P(within ${cfg.delivery_target_h} h | delivered) = ${pct(dt.p_within_target)}`, font: { color: cssVar("--ink"), size: 12 } }],
-      }), { displaylogo: false, responsive: true });
+      }), { displaylogo: false, responsive: true, scrollZoom: true });
   }
   const H = f.summary.hist;
   histChart("c-vehicles", H.vehicles_required, s1, "number of vehicles", [
@@ -168,7 +168,7 @@ function render(f) {
       values: [o.on_time, o.delayed], marker: { colors: [good, bad] }, textinfo: "percent",
       textfont: { color: "#fff", size: 13 }, hovertemplate: "%{label}: %{percent}<extra></extra>" }],
     { ...baseLayout("", ""), showlegend: true, legend: { orientation: "h", y: -0.05 }, margin: { l: 10, r: 10, t: 10, b: 30 } },
-    { displaylogo: false, responsive: true });
+    { displaylogo: false, responsive: true, scrollZoom: true });
 
   const tb = $("regimes"); tb.replaceChildren();
   const head = tb.createTHead().insertRow();
@@ -213,7 +213,7 @@ function render(f) {
       line: { width: 0 }, fillcolor: rgba(warm, 0.2), hoverinfo: "skip" },
     { x: cv.n, y: cv.p, type: "scatter", line: { color: warm, width: 2 }, hovertemplate: "%{x:,} scenarios: %{y:.1%}<extra></extra>" }],
     baseLayout("scenarios (log scale)", "P(meet SLA)", { xaxis: { type: "log", gridcolor: cssVar("--line"), title: { text: "scenarios (log scale)" } },
-      yaxis: { tickformat: ".0%", gridcolor: cssVar("--line") } }), { displaylogo: false, responsive: true });
+      yaxis: { tickformat: ".0%", gridcolor: cssVar("--line") } }), { displaylogo: false, responsive: true, scrollZoom: true });
   const last = cv.p.length - 1;
   $("conv-note").textContent = last >= 0
     ? `After ${num(f.n_completed)} scenarios: P(meet SLA) = ${pct(cv.p[last])}, 95% CI ${pct(cv.lo[last])} – ${pct(cv.hi[last])}.${f.stopped_early ? " Stopped early by the time budget." : ""}`

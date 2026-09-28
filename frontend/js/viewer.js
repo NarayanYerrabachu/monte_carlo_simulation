@@ -25,6 +25,44 @@ const state = {
   eye: { angle: Math.PI / 4, r: Math.hypot(1.6, 1.6), z: 0.9 },   // CortXplorer's TDA Mapper camera
 };
 const fl = { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false, paused: false };
+// every chart: scroll / pinch zoom and the zoom, pan and reset tools
+const PLOT_CONFIG = { displaylogo: false, responsive: true, scrollZoom: true };
+// The user's zoom per chart ({x, y} axis ranges or {camera}), re-applied on every redraw:
+// the dashboard redraws 10× a second during playback and would otherwise reset it.
+const userView = {};
+
+function rememberView(id) {
+  const el = $(id);
+  if (!el || el._mcView || !el.on) return;
+  el._mcView = true;
+  el.on("plotly_relayout", (ev) => {
+    if (!ev || el._mcApplying) return;
+    const v = (userView[id] = userView[id] || {});
+    if (ev["xaxis.autorange"] || ev.autosize) { delete userView[id]; return; }
+    if ("xaxis.range[0]" in ev) v.x = [ev["xaxis.range[0]"], ev["xaxis.range[1]"]];
+    if (ev["xaxis.range"]) v.x = ev["xaxis.range"];
+    if ("yaxis.range[0]" in ev) v.y = [ev["yaxis.range[0]"], ev["yaxis.range[1]"]];
+    if (ev["yaxis.range"]) v.y = ev["yaxis.range"];
+    const cam = ev["scene.camera"] || (ev["scene.camera.eye"] && { eye: ev["scene.camera.eye"] });
+    if (cam && cam.eye) v.camera = { ...(v.camera || {}), ...cam };
+  });
+}
+
+// Plotly.react that keeps the user's zoom on this chart
+function reactKeepingView(id, traces, layout) {
+  const v = userView[id];
+  if (v) {
+    if (v.x && layout.xaxis) layout.xaxis = { ...layout.xaxis, range: v.x, autorange: false };
+    if (v.y && layout.yaxis) layout.yaxis = { ...layout.yaxis, range: v.y, autorange: false };
+    if (v.camera && layout.scene) layout.scene = { ...layout.scene, camera: { ...layout.scene.camera, ...v.camera } };
+  }
+  const el = $(id);
+  el._mcApplying = true;
+  const done = Plotly.react(el, traces, layout, PLOT_CONFIG);
+  el._mcApplying = false;
+  rememberView(id);
+  return done;
+}
 const eyeXYZ = () => ({ x: state.eye.r * Math.cos(state.eye.angle), y: state.eye.r * Math.sin(state.eye.angle), z: state.eye.z });
 
 // ── API ─────────────────────────────────────────────────────────────────────
@@ -121,7 +159,7 @@ function renderMapper3d(frame) {
              zaxis: axis("Filter height (how different from average)", true), aspectmode: "cube",
              camera: { eye: eyeXYZ(), center: { x: 0, y: 0, z: 0 } } },
     uirevision: "keep",
-  }, { displaylogo: false, responsive: true });
+  }, PLOT_CONFIG);
   state.plotReady = true;
 }
 
@@ -191,7 +229,7 @@ function render3d(frame = state.frame) {
     legend: { orientation: "h", x: 0, y: 0, yanchor: "top", bgcolor: "rgba(0,0,0,0)", font: { size: 11 } },
     scene: { xaxis: axis(0), yaxis: axis(1), zaxis: axis(2), aspectmode: "cube", camera: { eye: eyeXYZ() } },
     uirevision: "keep",
-  }, { displaylogo: false, responsive: true });
+  }, PLOT_CONFIG);
   state.plotReady = true;
 }
 
@@ -211,7 +249,7 @@ function histogram(id, key, color, xTitle, lines, xfmt) {
   for (const v of all) { if (v < lo) lo = v; if (v > hi) hi = v; if (whole && !Number.isInteger(v)) whole = false; }
   const size = hi > lo ? (whole ? Math.max(1, Math.ceil((hi - lo) / 40)) : (hi - lo) / 30) : 1;
   const muted = cssVar("--muted"), grid = cssVar("--line");
-  Plotly.react(id, [{ type: "histogram", x: all.slice(0, fl.revealed), histnorm: "probability", autobinx: false,
+  reactKeepingView(id, [{ type: "histogram", x: all.slice(0, fl.revealed), histnorm: "probability", autobinx: false,
       xbins: { start: lo, end: hi + size, size }, marker: { color, opacity: 0.85 },
       hovertemplate: "%{x}: %{y:.1%}<extra></extra>" }], {
     paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 11 },
@@ -220,7 +258,7 @@ function histogram(id, key, color, xTitle, lines, xfmt) {
              range: [lo - size, hi + 2 * size], tickformat: xfmt || "" },
     yaxis: { title: { text: "probability", font: { size: 11, color: muted } }, gridcolor: grid, zeroline: false, color: muted, tickformat: ".0%" },
     shapes: lines.map((l) => l.shape), annotations: lines.map((l) => l.note), uirevision: id,
-  }, { displaylogo: false, responsive: true });
+  });
 }
 
 // ── 3D views ────────────────────────────────────────────────────────────────
@@ -315,8 +353,7 @@ function waterfall(id, key, color, xTitle, xfmt) {
       showlegend: j === 0 || j === rows.length - 1,
     });
   });
-  Plotly.react(id, traces, surfaceLayout(scene(xTitle, "simulated days", "probability", xfmt), true),
-               { displaylogo: false, responsive: true });
+  reactKeepingView(id, traces, surfaceLayout(scene(xTitle, "simulated days", "probability", xfmt), true));
 }
 
 // Breakdowns × on-time share as 3D columns on a coarse grid over the central
@@ -392,7 +429,7 @@ function joint(id) {
   const sc = scene("breakdowns in the day", "on-time share", "share of days", "", ".0%");
   sc.camera = { eye: { x: 1.7, y: -1.7, z: 1.25 } };
   sc.aspectratio = { x: 1.3, y: 1.3, z: 0.7 };
-  Plotly.react(id, traces, surfaceLayout(sc, obs.stat != null), { displaylogo: false, responsive: true });
+  reactKeepingView(id, traces, surfaceLayout(sc, obs.stat != null));
 }
 
 function setView(chart, is3d) {
@@ -404,6 +441,8 @@ function setView(chart, is3d) {
   if (hint) hint.hidden = !is3d;
   if (chart === "outcome") $("fl-outcome-title").textContent = is3d ? "Breakdowns × on-time share" : "Delivery outcome (simulation)";
   const el = $(PLOT_ID[chart]);
+  delete userView[PLOT_ID[chart]];
+  el._mcView = false;
   Plotly.purge(el);
   el.classList.toggle("is3d", is3d);
   el.closest(".card").classList.toggle("wide3d", is3d);          // 3D gets the full width
@@ -460,7 +499,7 @@ function renderDashboard(force3d = false) {
       textfont: { color: "#fff", size: 13 }, hovertemplate: "%{label}: %{percent}<extra></extra>" }], {
     paper_bgcolor: "rgba(0,0,0,0)", font: { color: cssVar("--ink"), size: 11 },
     margin: { l: 10, r: 10, t: 10, b: 10 }, showlegend: true, legend: { orientation: "h", y: -0.02 },
-  }, { displaylogo: false, responsive: true });
+  }, PLOT_CONFIG);
 }
 
 // ── playback: reveal the simulated days over the chosen duration ───────────
@@ -603,11 +642,96 @@ async function cancelJob() {
   }
 }
 
-// ── camera rotation ─────────────────────────────────────────────────────────
+// ── zoom (every chart) ──────────────────────────────────────────────────────
+// 3D: move the camera closer / further; 2D: shrink / grow the axis ranges around
+// their centre. Reset: the chart's default view. Scroll / pinch zoom as well.
+function zoomChart(id, factor) {
+  const el = $(id);
+  if (!el || !el._fullLayout) return;
+  if (id === "plot3d") {                                   // the rotating TDA view keeps its zoom in state.eye
+    state.eye.r *= factor;
+    state.eye.z *= factor;
+    pauseRotation();
+    Plotly.relayout(el, { "scene.camera.eye": eyeXYZ() });
+    return;
+  }
+  const v = (userView[id] = userView[id] || {});
+  const scene = el._fullLayout.scene;
+  if (scene && scene._scene) {
+    const e = (scene.camera && scene.camera.eye) || { x: 1.25, y: 1.25, z: 1.25 };
+    v.camera = { ...(v.camera || {}), eye: { x: e.x * factor, y: e.y * factor, z: e.z * factor } };
+    Plotly.relayout(el, { "scene.camera.eye": v.camera.eye });
+    return;
+  }
+  const upd = {};
+  for (const [ax, key] of [["xaxis", "x"], ["yaxis", "y"]]) {
+    const r = el._fullLayout[ax] && el._fullLayout[ax].range;
+    if (!r) continue;
+    const c = (r[0] + r[1]) / 2, h = ((r[1] - r[0]) / 2) * factor;
+    v[key] = [c - h, c + h];
+    upd[`${ax}.range`] = v[key];
+  }
+  if (Object.keys(upd).length) Plotly.relayout(el, upd);
+}
+
+function resetChart(id) {
+  const el = $(id);
+  if (!el || !el._fullLayout) return;
+  if (id === "plot3d") {
+    Object.assign(state.eye, { r: Math.hypot(1.6, 1.6), z: 0.9 });
+    Plotly.relayout(el, { "scene.camera.eye": eyeXYZ() });
+    return;
+  }
+  delete userView[id];
+  Plotly.purge(el);                                        // drop the user's zoom, redraw the default view
+  Object.keys(inc).forEach((k) => delete inc[k]);
+  renderDashboard(true);
+}
+
+function addZoomControls() {
+  for (const id of ["fl-vehicles", "fl-outcome", "fl-maint", "fl-share", "plot3d"]) {
+    const plot = $(id);
+    const head = plot && plot.closest(".card").querySelector(".card-head");
+    if (!head || head.querySelector(".zoom")) continue;
+    const box = document.createElement("div");
+    box.className = "zoom";
+    box.setAttribute("role", "group");
+    box.setAttribute("aria-label", "Zoom");
+    [["+", "Zoom in", () => zoomChart(id, 0.8)], ["−", "Zoom out", () => zoomChart(id, 1.25)],
+     ["Reset", "Reset view", () => resetChart(id)]].forEach(([text, title, fn]) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = text; b.title = title; b.setAttribute("aria-label", title);
+      b.addEventListener("click", fn);
+      box.appendChild(b);
+    });
+    head.appendChild(box);
+  }
+}
+
+// ── camera rotation (TDA view) ──────────────────────────────────────────────
+// Continues from wherever the user left the camera (zoom included) and pauses
+// while they drag, scroll or pinch, and for a few seconds after.
 let lastTurn = 0;
+let pausedUntil = 0;
+function pauseRotation(ms = 4000) { pausedUntil = performance.now() + ms; }
+
+function trackUserCamera() {
+  const el = $("plot3d");
+  if (!el || el._mcTracked || !el.on) return;
+  el._mcTracked = true;
+  el.on("plotly_relayouting", () => pauseRotation());
+  el.on("plotly_relayout", (ev) => {
+    const eye = ev && ((ev["scene.camera"] && ev["scene.camera"].eye) || ev["scene.camera.eye"]);
+    if (!eye || performance.now() - lastTurn < 25) return;        // our own rotation step
+    Object.assign(state.eye, { angle: Math.atan2(eye.y, eye.x), r: Math.hypot(eye.x, eye.y), z: eye.z });
+    pauseRotation();
+  });
+}
+
 function rotate(ts) {
-  if ($("rotate").checked && state.plotReady && ts - lastTurn > 50) {
-    lastTurn = ts;
+  if ($("rotate").checked && state.plotReady && ts - lastTurn > 50 && ts > pausedUntil) {
+    trackUserCamera();
+    lastTurn = performance.now();
     state.eye.angle += 0.012;
     Plotly.relayout("plot3d", { "scene.camera.eye": eyeXYZ() });
   }
@@ -641,6 +765,7 @@ async function init() {
     if (saved) $("speed").value = saved;
   } catch { /* storage unavailable */ }
   $("speed").addEventListener("change", (e) => { try { localStorage.setItem("mc-speed", e.target.value); } catch { /* ignore */ } });
+  addZoomControls();
   requestAnimationFrame(rotate);
 
   try {
