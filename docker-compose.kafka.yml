@@ -1,0 +1,9 @@
+# Overlay that joins the kafka_streaming stack's network (`make up` in that repo first):
+#   MC_TRANSPORT=kafka docker compose -f docker-compose.yml -f docker-compose.kafka.yml up -d
+services:
+  monte-carlo:
+    networks: [default, kafka_streaming]
+
+networks:
+  kafka_streaming:
+    external: true
