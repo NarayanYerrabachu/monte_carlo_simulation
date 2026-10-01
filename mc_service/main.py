@@ -42,7 +42,15 @@ class NoCacheStatic(StaticFiles):
 async def lifespan(app: FastAPI):
     app.state.jobs = JobStore(workers=config.workers, n_jobs=config.n_jobs, ttl_s=config.job_ttl_s,
                               job_dir=config.job_dir, rerun_ttl_s=config.rerun_ttl_s)
+    worker = None
+    if config.transport == "kafka":
+        from mc_service.kafka_transport import KafkaWorker
+
+        worker = KafkaWorker(app.state.jobs, config.kafka_servers)
+        worker.start()
     yield
+    if worker is not None:
+        worker.stop()
     app.state.jobs.shutdown()
 
 

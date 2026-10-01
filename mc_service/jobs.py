@@ -128,9 +128,10 @@ class JobStore:
                 log.warning("Skipping unreadable saved job %s: %s", path.name, exc)
         log.info("Loaded %d saved job(s) from %s", loaded, self._dir)
 
-    def submit(self, request: SimulationRequest) -> Job:
+    def submit(self, request: SimulationRequest, job_id: str | None = None) -> Job:
+        """Queue a job. ``job_id`` is chosen by the caller on the Kafka path (the sender links to it)."""
         tests = request.requested_tests()
-        job = Job(id=uuid.uuid4().hex, dataset_id=request.dataset_id, tests=tests, request=request,
+        job = Job(id=job_id or uuid.uuid4().hex, dataset_id=request.dataset_id, tests=tests, request=request,
                   progress={t: {"done": 0, "total": 0} for t in tests},
                   live={t: LiveFeed() for t in tests})
         with self._lock:

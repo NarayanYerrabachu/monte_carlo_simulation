@@ -17,6 +17,8 @@ class ServiceConfig:
     job_ttl_s: float      # MC_JOB_TTL_S: finished jobs kept (memory and disk), default 7 days
     job_dir: str | None   # MC_JOB_DIR: where finished jobs are saved so they survive restarts (unset: memory only)
     rerun_ttl_s: float    # MC_RERUN_TTL_S: how long a fleet job's records stay in memory for what-if re-runs
+    transport: str        # MC_TRANSPORT: "http" (jobs arrive on /v1/jobs) or "kafka" (also consume mc.jobs.requested)
+    kafka_servers: str    # KAFKA_BOOTSTRAP_SERVERS (kafka transport only)
 
     @classmethod
     def from_env(cls) -> ServiceConfig:
@@ -27,4 +29,6 @@ class ServiceConfig:
             job_ttl_s=float(os.getenv("MC_JOB_TTL_S", str(7 * 24 * 3600))),
             job_dir=os.getenv("MC_JOB_DIR") or None,
             rerun_ttl_s=float(os.getenv("MC_RERUN_TTL_S", "3600")),
+            transport="kafka" if os.getenv("MC_TRANSPORT", "http").strip().lower() == "kafka" else "http",
+            kafka_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "").strip(),
         )

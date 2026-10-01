@@ -17,8 +17,14 @@ services:
       MC_MAX_BODY_MB: ${MC_MAX_BODY_MB:-100}
       MC_JOB_TTL_S:   ${MC_JOB_TTL_S:-604800}
       MC_JOB_DIR:     /data/jobs
+      # Kafka transport (optional): also consume jobs from mc.jobs.requested and publish mc.jobs.status.
+      # Brokers come from the kafka_streaming stack; join its docker network to reach kafka-N:19092.
+      MC_TRANSPORT:            ${MC_TRANSPORT:-http}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-1:19092,kafka-2:19092,kafka-3:19092}
     volumes:
       - mc-jobs:/data/jobs          # finished jobs survive restarts and rebuilds
+      - mc-payloads:/data/mc-payloads   # request files from CortXplorer (Kafka transport)
 
 volumes:
+  mc-payloads:
   mc-jobs:

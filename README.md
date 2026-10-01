@@ -49,6 +49,24 @@ and `frontend/css`). The service serves them from there (`MC_FRONTEND_DIR` overr
 Dependencies live in `Pipfile` / `Pipfile.lock` only. The Docker build installs with `--deploy`, so run
 `pipenv lock` after editing the Pipfile.
 
+## Kafka transport (optional)
+
+With `MC_TRANSPORT=kafka` and `KAFKA_BOOTSTRAP_SERVERS` set, the service also takes jobs from Kafka
+(cluster from the `kafka_streaming` repo). The HTTP API stays available, and results and the live viewer
+are served over HTTP as before.
+
+| Topic               | Key          | Direction        | Value                                                                  |
+|---------------------|--------------|------------------|------------------------------------------------------------------------|
+| `mc.jobs.requested` | `dataset_id` | CortXplorer → service | `{contract_version, job_id, dataset_id, tests, payload_path, payload_bytes, submitted_at}` |
+| `mc.jobs.cancel`    | `job_id`     | CortXplorer → service | `{job_id}`                                                        |
+| `mc.jobs.status`    | `job_id`     | service → CortXplorer | `{job_id, status, progress, errors}` (on every change, about once a second) |
+
+The request is too large for a message, so `payload_path` points to a gzipped contract-v1 JSON file on a
+volume shared with the sender (`mc-payloads`, mounted at `/data/mc-payloads`). The service reads it, removes it,
+and runs the job under the sender's `job_id`, so `/?job=<job_id>` opens it. A request that cannot be read or
+validated is answered with a `failed` status. Several service instances share `mc.jobs.requested` (consumer
+group `mc-service`). The three topics are declared in `kafka_streaming/docker/kafka/topics.txt`.
+
 ## API
 
 **Requests and responses are JSON.** Requests that carry data send a JSON body; the GET endpoints
