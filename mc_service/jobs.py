@@ -3,9 +3,9 @@
 A job's tests run one after another; a failing test is recorded in
 ``errors`` and the others still run (partial results are useful). The input
 data is dropped as soon as the job ends — only results stay, for
-``MC_JOB_TTL_S`` seconds (7 days by default). A fleet job's records are kept
-for ``MC_RERUN_TTL_S`` (1 h) so the report page can re-run it with other
-parameters.
+``MC_JOB_TTL_S`` seconds (7 days by default). The records of a fleet or
+scenario job are kept for ``MC_RERUN_TTL_S`` (1 h) so the report page can
+re-run it with other parameters.
 
 With ``MC_JOB_DIR`` set, every finished job (result + live feed, gzip JSON)
 is saved there and loaded again at startup, so report and replay links keep
@@ -33,6 +33,7 @@ from mc_service.simulations import RUNNERS, RunContext
 log = logging.getLogger(__name__)
 
 ACTIVE = ("queued", "running")
+RERUNNABLE = ("fleet", "scenario")          # tests whose records are kept for what-if re-runs
 
 
 @dataclass
@@ -49,7 +50,7 @@ class Job:
     errors: dict[str, str] = field(default_factory=dict)
     cancel: threading.Event = field(default_factory=threading.Event)
     live: dict[str, LiveFeed] = field(default_factory=dict)
-    rerun_input: SimulationRequest | None = None   # fleet request kept for what-if re-runs (until TTL)
+    rerun_input: SimulationRequest | None = None   # fleet / scenario request kept for what-if re-runs (until TTL)
 
     def status_view(self) -> dict[str, Any]:
         end = self.finished or time.time()
@@ -179,25 +180,32 @@ class JobStore:
         job.finished = time.time()
         self._save(job, status)                   # saved first: 'done' then really means safe on disk
         job.status = status
-        # Drop the input data — except a fleet request, kept (until the TTL) so the
-        # dashboard can re-run it with other parameters without the sender.
-        if job.request is not None and job.request.fleet is not None:
+        # Drop the input data — except a fleet / scenario request, kept (until the TTL) so
+        # the dashboard can re-run it with other parameters without the sender.
+        if job.request is not None and any(getattr(job.request, t) is not None for t in RERUNNABLE):
             job.rerun_input = job.request
         job.request = None
 
-    def rerun(self, job: Job, n_sims: int | None, overrides: dict) -> Job:
-        """New job on the same fleet records with changed parameters."""
+    def rerun(self, job: Job, n_sims: int | None, overrides: dict[str, dict]) -> Job:
+        """New job on the same records with changed parameters (``overrides``: test → fields)."""
         base = job.rerun_input or job.request
-        if base is None or base.fleet is None:
-            if "fleet" in job.tests:
-                raise ValueError("This job's fleet records are no longer held for re-runs (they are kept for "
-                                 "1 hour, and not across restarts). Press Monte Carlo ↗ in CortXplorer again "
-                                 "to send the data, then re-run.")
-            raise ValueError("This job has no fleet records to re-run (only fleet jobs can be re-run).")
-        fleet = base.fleet.model_copy(update=overrides)
+        test = next((t for t in RERUNNABLE if t in job.tests), None)
+        if test is None:
+            raise ValueError("This job has no records to re-run (only fleet and scenario jobs can be re-run).")
+        if base is None or getattr(base, test) is None:
+            raise ValueError("This job's records are no longer held for re-runs (they are kept for "
+                             "1 hour, and not across restarts). Press Monte Carlo ↗ in CortXplorer again "
+                             "to send the data, then re-run.")
+        section = getattr(base, test)
+        changes = dict(overrides.get(test) or {})
+        if test == "scenario" and "alerts" in changes:          # per-metric alert thresholds
+            alerts = changes.pop("alerts") or {}
+            changes["metrics"] = [m.model_copy(update={"alert": alerts[m.key]}) if m.key in alerts else m
+                                  for m in section.metrics]
+        section = section.model_copy(update=changes)
         settings = base.settings.model_copy(update={"n_sims": n_sims} if n_sims else {})
         request = SimulationRequest(contract_version=base.contract_version, dataset_id=base.dataset_id,
-                                    settings=settings, fleet=type(fleet).model_validate(fleet.model_dump()))
+                                    settings=settings, **{test: type(section).model_validate(section.model_dump())})
         return self.submit(request)
 
     def _run(self, job: Job) -> None:

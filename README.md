@@ -20,6 +20,17 @@ Tests:
   delivery-time distribution against a target, vehicles required (with the 95th percentile), fleet
   availability, fuel, breakdown risk and maintenance cost, broken down per TDA regime. Excluding ML
   anomalies is optional, and breakdown or absent-driver records are never excluded.
+- **Scenario (`scenario`): any dataset.** The domain-agnostic simulation for every table that is not a
+  fleet table (pharma batches, projects, market data, …). CortXplorer sends the records as a list of
+  *metrics* (the table's own numeric columns, each with `agg: "sum" | "mean"`, a label and a unit), an
+  optional *period* key per record (day, week, month, …), and each record's TDA regime, ML anomaly
+  score and the TDA Mapper graph. Each simulated period draws a real period (when the data has at least
+  5 periods of 5 records; otherwise it samples all records) and resamples `period_size` records from
+  it. It returns, per metric, the expected value, the 5–95% range and P(above the alert) with the
+  alert at the historical P90; the high-risk records per period (anomaly score ≥ 0.6); and per TDA
+  regime how over-represented it is in the periods where a metric is in its top 5%. The result
+  describes its own dashboard (`summary.dashboard`: tiles and charts), so the live viewer and the
+  report render it in the same format as the fleet dashboard without knowing the columns.
 - **Planned (phases 3–5):** relationship permutation, pre-event pseudo-events, and anomaly and Mapper
   stability.
 
@@ -68,13 +79,13 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/v1/jobs/{id}` | Status (`queued`, `running`, `done`, `failed` or `cancelled`) and per-test progress |
 | `GET` | `/v1/jobs/{id}/result` | `SimulationResponse`. Returns 409 while the job is still running or after it was cancelled |
 | `DELETE` | `/v1/jobs/{id}` | Cancel the job |
-| `POST` | `/v1/jobs/{id}/rerun` | Re-run a fleet job on the same records with other parameters: `{"n_sims": 10000, "fleet": {"fleet_size": 100, "sla_on_time": 0.9}}` |
+| `POST` | `/v1/jobs/{id}/rerun` | Re-run a fleet or scenario job on the same records with other parameters: `{"n_sims": 10000, "fleet": {"fleet_size": 100, "sla_on_time": 0.9}}` or `{"scenario": {"period_size": 60, "alerts": {"cost": 90000}}}` |
 | `GET` | `/v1/jobs` | All jobs, newest first |
 | `GET` | `/v1/jobs/{id}/live?since=N` | Live feed: new null values, the latest surrogate, and the running p-value and noise band |
 | `GET` | `/` | **Live viewer**: 3D view of the data vs. the random surrogate, plus the null distribution as it builds up |
-| `GET` | `/?job=<id>` | **Live viewer** (fleet): CortXplorer's Monte Carlo ↗ lands here, and the simulated days play out as a live dashboard |
+| `GET` | `/?job=<id>` | **Live viewer** (fleet and scenario jobs): CortXplorer's Monte Carlo ↗ lands here, and the simulated days / periods play out as a live dashboard |
 | `GET` | `/report?job=<id>` | **Job report**: HTML view of a finished job, with Download PDF / Excel and what-if re-runs (`/fleet?job=` is the same page) |
-| `POST` | `/v1/reports/job` | `{"job_id": "…", "format": "json" \| "pdf" \| "xlsx"}`: the report of a finished job; files come back as base64 in the JSON |
+| `POST` | `/v1/reports/job` | `{"job_id": "…", "format": "json" \| "pdf" \| "xlsx"}`: the "Monte Carlo with TDA" report of a finished job (result, TDA regimes and the TDA Mapper graph it was sent); files come back as base64 in the JSON |
 | `GET` | `/report` | Assumption-based fleet report (no job), with PDF and Excel download buttons |
 | `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
 | `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
@@ -99,7 +110,9 @@ demo's **Open live view** link uses it.
 
 ## Flow: CortXplorer → live viewer → report
 
-1. In CortXplorer, load a fleet table and press **Monte Carlo ↗**. CortXplorer sends the records,
+1. In CortXplorer, load a table and press **Monte Carlo ↗** (a fleet table runs the fleet model, any
+   other table the scenario simulation; the steps below describe the fleet dashboard, and a scenario
+   job fills the same layout with its own tiles and charts). CortXplorer sends the records,
    each record's TDA regime and ML anomaly score, plus the TDA/ML findings.
 2. The job lands in the **live viewer** (`/?job=<id>`). The sample dashboard fills up day by day:
    - KPI tiles: fleet availability, on-time delivery probability, daily fuel cost, breakdown risk and
@@ -163,6 +176,8 @@ identical, and the same seed always gives the same report.
 - Phase 1 is done: the service, request/response format, job API, simulation engine and Docker image.
 - Phase 2 is done: the loop (H1) significance test and the live viewer.
 - The fleet-management report is done: HTML, PDF and Excel.
+- The scenario simulation (any dataset) is done: live viewer, HTML report, PDF and Excel, what-if re-runs.
+  Fleet and scenario reports include the TDA Mapper graph (3D picture and labelled groups).
 - The relationship, pre-event and stability tests arrive in phases 3–5. Until then, requesting one of
   them reports `"not implemented yet"`.
 See [docs/implementations/monte-carlo-simulation.md](docs/implementations/monte-carlo-simulation.md).

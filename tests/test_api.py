@@ -1,4 +1,6 @@
+import base64
 import gzip
+import io
 import json
 import threading
 import time
@@ -242,8 +244,73 @@ def test_rerun_rejects_non_fleet_jobs(client, fake_loops):
     job_id = data(client.post("/v1/jobs", json=_loops_request()))["job_id"]
     _wait(client, job_id)
     r = client.post(f"/v1/jobs/{job_id}/rerun", json={"fleet": {"fleet_size": 5}})
-    assert r.status_code == 409 and "only fleet jobs" in r.json()["message"]
+    assert r.status_code == 409 and "only fleet and scenario jobs" in r.json()["message"]
     assert client.post(f"/v1/jobs/{job_id}/rerun", json={"fleet": {"colour": 1}}).status_code == 422
+
+
+def _scenario_request(**section):
+    from tests.test_scenario_sim import _batches
+    rows = _batches(bad_period=3)
+    rows["mapper"] = {"nodes": [{"id": i, "x": i * 0.3, "y": (i % 3) * 0.4, "z": i * 0.1,
+                                 "members": list(range(i * 20, i * 20 + 20)), "label": f"Week {i + 1}"} for i in range(12)],
+                      "edges": [[i, i + 1] for i in range(11)]}
+    return {"contract_version": "1", "dataset_id": "pharma-ds", "settings": {"n_sims": 100, "seed": 1},
+            "scenario": {**rows, "title": "Pharma batches", "period_label": "week", "record_label": "batches", **section}}
+
+
+def test_scenario_job_end_to_end_with_reports_and_rerun(client):
+    """Any table: the job describes its own dashboard; the reports carry the TDA Mapper graph."""
+    job_id = data(client.post("/v1/jobs", json=_scenario_request()))["job_id"]
+    assert _wait(client, job_id)["status"] == "done"
+    res = data(client.get(f"/v1/jobs/{job_id}/result"))
+    assert res["errors"] == {} and res["scenario"]["config"]["title"] == "Pharma batches"
+    live = data(client.get(f"/v1/jobs/{job_id}/live"))["live"]["scenario"]
+    assert live["observed"]["dashboard"]["unit"] == "weeks" and live["n_null"] == 100
+
+    rep = data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "json"}))
+    assert rep["kind"] == "scenario" and len(rep["graph"]["nodes"]) == 12 and rep["graph"]["view"]["color_key"] == "risk"
+    for fmt, magic in (("pdf", b"%PDF"), ("xlsx", b"PK")):
+        f = data(client.post("/v1/reports/job", json={"job_id": job_id, "format": fmt}))
+        assert f["filename"] == f"monte-carlo-scenario-{job_id[:8]}.{fmt}"
+        assert base64.b64decode(f["content"]).startswith(magic)
+
+    r = client.post(f"/v1/jobs/{job_id}/rerun", json={"n_sims": 60, "scenario": {"period_size": 10, "alerts": {"cost": 9000}}})
+    assert r.status_code == 202
+    again = data(r)["job_id"]
+    assert _wait(client, again)["status"] == "done"
+    res2 = data(client.get(f"/v1/jobs/{again}/result"))["scenario"]
+    assert res2["config"]["period_size"] == 10 and res2["n_completed"] == 60
+    assert res2["summary"]["kpi"]["cost_alert"] == 9000 and res2["summary"]["kpi"]["cost_p_over"] == 1.0
+    assert client.post(f"/v1/jobs/{job_id}/rerun", json={"scenario": {"colour": 1}}).status_code == 422
+
+
+def test_scenario_request_validation(client):
+    bad = _scenario_request()
+    bad["scenario"]["metrics"][0]["values"] = [1.0]
+    r = client.post("/v1/jobs", json=bad)
+    assert r.status_code == 422 and "metrics[yield_pct].values" in r.json()["message"]
+    dup = _scenario_request()
+    dup["scenario"]["metrics"][1]["key"] = "yield_pct"
+    assert "unique" in client.post("/v1/jobs", json=dup).json()["message"]
+
+
+def test_fleet_report_carries_the_mapper_graph(client):
+    from tests.test_fleet_sim import _records
+    rows = _records()
+    rows["mapper"] = {"nodes": [{"id": 0, "x": 0, "y": 0, "z": 0, "members": list(range(100)), "label": "Depot A"},
+                                {"id": 1, "x": 1, "y": 1, "z": 1, "members": list(range(100, 200)), "label": "Depot B"}],
+                      "edges": [[0, 1]]}
+    req = {"contract_version": "1", "dataset_id": "fleet-ds", "settings": {"n_sims": 100, "seed": 1}, "fleet": rows}
+    job_id = data(client.post("/v1/jobs", json=req))["job_id"]
+    assert _wait(client, job_id)["status"] == "done"
+    rep = data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "json"}))
+    assert rep["kind"] == "fleet" and [nd["label"] for nd in rep["graph"]["nodes"]] == ["Depot A", "Depot B"]
+    xlsx = base64.b64decode(data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "xlsx"}))["content"])
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(xlsx))
+    assert wb.sheetnames[0] == "Report" and "TDA Mapper groups" in wb.sheetnames
+    assert len(wb["TDA Galaxy & Mapper"]._images) == 2                  # Galaxy view and Mapper view
+    assert base64.b64decode(data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "pdf"}))["content"]).startswith(b"%PDF")
 
 
 @pytest.mark.parametrize("fmt, magic", [("pdf", b"%PDF"), ("xlsx", b"PK")])
@@ -297,7 +364,7 @@ def test_finished_jobs_survive_a_restart(tmp_path):
     assert again.response()["fleet"]["summary"]["kpi"] == job.response()["fleet"]["summary"]["kpi"]
     assert again.live["fleet"].snapshot()["n_null"] == 50                           # replay still works
     with pytest.raises(ValueError, match="Monte Carlo ↗"):                          # records not kept across restarts
-        reloaded.rerun(again, None, {"fleet_size": 5})
+        reloaded.rerun(again, None, {"fleet": {"fleet_size": 5}})
     reloaded.shutdown()
 
     expired = JobStore(workers=1, n_jobs=1, ttl_s=0.001, job_dir=str(tmp_path))

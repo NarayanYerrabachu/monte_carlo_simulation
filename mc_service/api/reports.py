@@ -45,7 +45,8 @@ def _encoded(content: bytes, content_type: str, filename: str) -> dict:
 
 @router.post("/job")
 def job_report_file(body: JobReportRequest, request: Request):
-    """Report of a finished job (fleet simulation or loop test): the result as JSON, or PDF / Excel as base64."""
+    """Report of a finished job (fleet / scenario simulation or loop test): the result (plus the TDA Mapper
+    graph it was sent) as JSON, or PDF / Excel as base64."""
     job = request.app.state.jobs.get(body.job_id)
     if job is None:
         raise HTTPException(404, f"Job {body.job_id} not found (unknown or expired)")
@@ -56,12 +57,14 @@ def job_report_file(body: JobReportRequest, request: Request):
         kind = job_report.kind(result)
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
+    feed = job.live.get(kind)
+    graph = (feed.observed or {}).get("graph") if feed is not None else None    # TDA Mapper graph the job was sent
     if body.format == "json":
-        return {"kind": kind, "result": result}
+        return {"kind": kind, "result": result, "graph": graph}
     name = f"monte-carlo-{kind}-{body.job_id[:8]}.{body.format}"
     if body.format == "pdf":
-        return _encoded(job_report.build_pdf(result), PDF_TYPE, name)
-    return _encoded(job_report.build_xlsx(result), XLSX_TYPE, name)
+        return _encoded(job_report.build_pdf(result, graph), PDF_TYPE, name)
+    return _encoded(job_report.build_xlsx(result, graph), XLSX_TYPE, name)
 
 
 def _file(content: bytes, content_type: str, body: FleetReportRequest, ext: str) -> dict:

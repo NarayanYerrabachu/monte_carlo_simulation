@@ -21,7 +21,7 @@
     <div class="toolbar">
       <label class="field">
         <span>Job</span>
-        <select id="job-select"><option value="">— no fleet jobs yet —</option></select>
+        <select id="job-select"><option value="">— no jobs yet —</option></select>
       </label>
       <button id="dl-pdf" type="button" disabled>Download PDF</button>
       <button id="dl-xlsx" type="button" disabled>Download Excel</button>
@@ -30,25 +30,26 @@
 
   <main class="page">
     <div>
-      <div class="eyebrow">Fleet management · Monte Carlo on TDA / ML results</div>
-      <h2 class="title">Monte Carlo Simulation in Fleet Management</h2>
-      <p class="lede">From “what might happen?” to “how likely is it?”: thousands of possible operating days, sampled from real fleet records and the regimes TDA found in them.</p>
+      <div class="eyebrow" id="rp-eyebrow">Monte Carlo on TDA / ML results</div>
+      <h2 class="title" id="rp-title">Monte Carlo Simulation with TDA</h2>
+      <p class="lede" id="rp-lede">From “what might happen?” to “how likely is it?”: thousands of possible scenarios, sampled from the real records and the regimes TDA found in them.</p>
     </div>
 
     <div id="empty" class="notice" hidden>
-      No finished fleet simulation yet. In CortXplorer, load a fleet table (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. It runs in the live viewer; when it is done, <b>Generate report ↗</b> opens it here.
+      No finished simulation yet. In CortXplorer, load any table (fleet, pharma, projects, …) and press <b>Monte Carlo ↗</b>. It runs in the live viewer; when it is done, <b>Generate report ↗</b> opens it here.
     </div>
     <div id="error" class="error" hidden></div>
 
     <section class="card" id="whatif" hidden>
       <h3>What-if: re-run with other parameters</h3>
-      <p class="note">Same fleet records and TDA / ML results; only the parameters change. Each run is kept as its own job.</p>
+      <p class="note">Same records and TDA / ML results; only the parameters change. Each run is kept as its own job.</p>
       <div class="controls">
-        <label class="field"><span>Fleet size (vehicles)</span><input id="in-fleet" type="number" min="1" step="1"></label>
-        <label class="field"><span>Delivery target (h)</span><input id="in-target" type="number" min="0.5" max="24" step="0.5"></label>
-        <label class="field"><span>On-time SLA (%)</span><input id="in-sla" type="number" min="50" max="100" step="1"></label>
+        <label class="field fleet-only"><span>Fleet size (vehicles)</span><input id="in-fleet" type="number" min="1" step="1"></label>
+        <label class="field fleet-only"><span>Delivery target (h)</span><input id="in-target" type="number" min="0.5" max="24" step="0.5"></label>
+        <label class="field fleet-only"><span>On-time SLA (%)</span><input id="in-sla" type="number" min="50" max="100" step="1"></label>
+        <label class="field scenario-only" hidden><span id="lbl-period">Records per period</span><input id="in-period" type="number" min="1" max="100000" step="1"></label>
         <label class="field"><span>Scenarios</span><input id="in-sims" type="number" min="1000" max="100000" step="1000"></label>
-        <label class="check"><input id="in-clean" type="checkbox"> Exclude operating records the ML model flags as anomalies (score ≥ 0.6)</label>
+        <label class="check"><input id="in-clean" type="checkbox"> <span id="lbl-clean">Exclude operating records the ML model flags as anomalies (score ≥ 0.6)</span></label>
         <button id="rerun" class="primary" type="button">Re-run simulation</button>
       </div>
       <div class="progress" id="progress" hidden><div id="bar"></div></div>
@@ -58,7 +59,7 @@
     <div id="result" hidden>
       <section class="flow">
         <div class="card">
-          <h3><span class="n">1.</span> Uncertain inputs <span class="muted">observed in the data</span></h3>
+          <h3><span class="n">1.</span> Uncertain inputs <span class="muted" id="inputs-sub">observed in the data</span></h3>
           <div class="tiles" id="inputs"></div>
         </div>
         <div class="arrow" aria-hidden="true">→</div>
@@ -72,7 +73,8 @@
 
       <section class="kpis" id="kpis"></section>
 
-      <section class="charts">
+      <section class="charts" id="gx-charts" hidden></section>
+      <section class="charts" id="fleet-charts">
         <div class="card"><h3>Delivery time distribution</h3><div class="chart" id="c-delivery"></div></div>
         <div class="card"><h3>Vehicle requirement distribution</h3><div class="chart" id="c-vehicles"></div></div>
         <div class="card"><h3>Delivery outcome</h3><div class="chart" id="c-outcome"></div></div>
@@ -81,8 +83,17 @@
 
       <section class="card">
         <h3><span class="n">3.</span> Where the risk comes from — TDA regimes</h3>
-        <p class="note">Each regime is a cluster TDA found in the fleet records. The simulation samples from all of them; the table shows how each behaves in the data.</p>
+        <p class="note" id="regimes-note">Each regime is a cluster TDA found in the records. The simulation samples from all of them; the table shows how each behaves in the data.</p>
         <div class="table-wrap"><table id="regimes"></table></div>
+      </section>
+
+      <section class="card" id="mapper-card" hidden>
+        <h3><span class="n">4.</span> <span id="mapper-title">TDA Mapper — the shape of the data</span>
+          <span class="seg" role="group" aria-label="TDA view"><button type="button" data-tda="mapper" aria-pressed="true">Mapper</button><button type="button" data-tda="galaxy" aria-pressed="false">Galaxy</button></span></h3>
+        <p class="note" id="mapper-hint"></p>
+        <div class="mapper-plot" id="mapper-plot"></div>
+        <div class="table-wrap"><table id="mapper-table"></table></div>
+        <p class="note" id="mapper-note"></p>
       </section>
 
       <section class="two">
@@ -98,6 +109,7 @@
     </div>
   </main>
 
+  <script src="/js/mapper_view.js"></script>
   <script src="/js/fleet.js"></script>
 </body>
 </html>

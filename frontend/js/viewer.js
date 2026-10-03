@@ -1,7 +1,13 @@
-// Monte Carlo live viewer (fleet). Polls GET /v1/jobs/{id}/live for a fleet job
-// sent by CortXplorer and fills the sample dashboard day by day: KPI tiles and
-// the vehicle requirement / delivery outcome / maintenance cost / on-time share
-// distributions, plus the fleet records in 3D by TDA regime.
+// Monte Carlo live viewer. Polls GET /v1/jobs/{id}/live for a job sent by
+// CortXplorer and fills the dashboard period by period: KPI tiles, distribution
+// charts (2D / 3D) and the TDA Mapper graph of the records.
+//
+// Two kinds of job share the page:
+//   fleet     the fleet dashboard (vehicle requirement / delivery outcome /
+//             maintenance cost / on-time share), fixed in index.html
+//   scenario  any other table: the job describes its own tiles and charts
+//             (observed.dashboard) and the Mapper colouring (graph.view), and
+//             the page builds them — nothing here knows the dataset's columns.
 //
 // Every KPI shown is computed by the service (running checkpoints). The service
 // finishes 100,000 days in seconds, so the viewer plays the simulated days back
@@ -19,10 +25,31 @@ const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyV
 const pct = (v) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
 const int = (v) => (v == null ? "–" : Math.round(v).toLocaleString("en-GB"));
 
+// adaptive number: 12,345 · 123.4 · 12.35 · 0.123
+const num = (v) => {
+  if (v == null || !Number.isFinite(v)) return "–";
+  const a = Math.abs(v), d = a >= 1000 ? 0 : a >= 100 ? 1 : a >= 1 ? 2 : 3;
+  return v.toLocaleString("en-GB", { maximumFractionDigits: d });
+};
+// value in the format a job asked for ("pct" | "int" | "num"), with its unit
+function fmtVal(v, fmt, unit) {
+  if (v == null) return "–";
+  const s = fmt === "pct" ? pct(v) : fmt === "int" ? int(v) : num(v);
+  if (!unit || fmt === "pct") return s;
+  return unit === "€" || unit === "$" || unit === "£" ? `${unit}${s}` : `${s} ${unit}`;
+}
+const TONE_VAR = { blue: "--observed", good: "--good", warm: "--surrogate", bad: "--bad" };
+const TONE_INK = { blue: "accent-ink", good: "good-ink", warm: "warm-ink", bad: "bad-ink" };
+const tone = (t) => cssVar(TONE_VAR[t] || "--observed");
+// scenario jobs: the dashboard the job described (null for fleet jobs)
+const gx = { dash: null };
+const unitWord = () => (gx.dash ? gx.dash.unit : "days");
+
 const state = {
   jobId: null, status: null, generation: 0, timer: null, received: 0,
   observed: null, frame: null, plotReady: false,
   eye: { angle: Math.PI / 4, r: Math.hypot(1.6, 1.6), z: 0.9 },   // CortXplorer's TDA Mapper camera
+  tdaView: "mapper",                                              // "mapper" | "galaxy" (same graph, two looks)
 };
 const fl = { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false, paused: false };
 // every chart: scroll / pinch zoom and the zoom, pan and reset tools
@@ -88,110 +115,34 @@ function cloudTrace(points, name, color, opacity, size) {
   };
 }
 
-// TDA Mapper graph in 3D, laid out exactly like CortXplorer's TDA Mapper view:
-// topological spread on x / y, filter height (lens) on z. Node size = records,
-// colour = on-time share of the node's deliveries (from the data). Orange marks
-// the groups holding the vehicles of the simulated day currently shown.
+// TDA Mapper graph in 3D (drawn by mapper_view.js, shared with the report page).
+// Orange rings mark the groups holding the records of the simulated period shown.
 function renderMapper3d(frame) {
   const g = state.observed.graph;
-  const byId = new Map(g.nodes.map((nd) => [nd.id, nd]));
-  const ex = [], ey = [], ez = [];
-  for (const [a, b] of g.edges) {
-    const p = byId.get(a), q = byId.get(b);
-    if (!p || !q) continue;
-    ex.push(p.x, q.x, null); ey.push(p.y, q.y, null); ez.push(p.z, q.z, null);
-  }
-  // same marker sizing as CortXplorer's TDA Mapper 3D view
-  const radius = (size) => Math.max(5, Math.min(28, Math.sqrt(size) * 2.4));
-  // Labels: each distinct label once (on its largest group), numbered in the plot and spelled
-  // out in the key table below; ⚠ = below 70 % on time.
-  const RISK = 0.7, MAX_LABELS = 12;
-  const risky = (nd) => nd.on_time != null && nd.on_time < RISK;
-  const bySize = [...g.nodes].sort((a, b) => b.size - a.size);
-  const seen = new Set(), shown = [];
-  for (const nd of bySize) {
-    const key = nd.label || `group ${nd.id}`;
-    if (shown.length >= MAX_LABELS) break;
-    if (seen.has(key) || nd.size < 20) continue;
-    if (shown.length < 8 || risky(nd)) { seen.add(key); shown.push(nd); }
-  }
-  renderMapperKey(shown, risky);
-  const rank = new Map(shown.map((nd, i) => [nd.id, i + 1]));
-  const late = (nd) => (nd.on_time == null ? 0 : 1 - nd.on_time);
-  const records = g.nodes.reduce((acc, nd) => acc + nd.size, 0);
-  const traces = [
-    // connections: brighter than CortXplorer's #3A4050 so they stay visible on the dark scene
-    { type: "scatter3d", mode: "lines", x: ex, y: ey, z: ez, line: { color: "rgba(170,182,204,0.75)", width: 2.5 },
-      hoverinfo: "skip", showlegend: false },
-    { type: "scatter3d", mode: "markers+text", showlegend: false,
-      x: g.nodes.map((nd) => nd.x), y: g.nodes.map((nd) => nd.y), z: g.nodes.map((nd) => nd.z),
-      text: g.nodes.map((nd) => (rank.has(nd.id) ? `${risky(nd) ? "⚠" : ""}${rank.get(nd.id)}` : "")),
-      textposition: "top center",
-      textfont: { size: 12, color: "rgba(217,220,227,0.95)", family: "IBM Plex Mono, monospace" },
-      // CortXplorer's teal → purple → red scale, here for the share of late deliveries
-      marker: { size: g.nodes.map((nd) => radius(nd.size)), color: g.nodes.map(late), cmin: 0, cmax: 1,
-                colorscale: [[0, "#5E9CA6"], [0.5, "#9B7FD4"], [1, "#E05252"]], opacity: 0.88,
-                line: { width: 1.5, color: "rgba(15,17,23,0.7)" },
-                colorbar: { title: { text: "late deliveries", side: "right", font: { color: "#878E9C", size: 11 } },
-                            tickformat: ".0%", tickfont: { color: "#878E9C", size: 10 }, len: 0.55, thickness: 10,
-                            outlinewidth: 0 } },
-      customdata: g.nodes.map((nd) => `<b>${nd.label || `group ${nd.id}`}</b><br>${nd.profile || ""}<br>group ${nd.id} · ${int(nd.size)} records<br>on time ${pct(nd.on_time)} · breakdowns ${pct(nd.breakdown_rate)} · availability ${pct(nd.availability)}`),
-      hovertemplate: "%{customdata}<extra></extra>" },
-  ];
-  if (frame && frame.nodes && frame.nodes.length) {
-    const hit = frame.nodes.map(([id, c]) => [byId.get(id), c]).filter(([nd]) => nd);
-    traces.push({ type: "scatter3d", mode: "markers", showlegend: false,
-      x: hit.map(([nd]) => nd.x), y: hit.map(([nd]) => nd.y), z: hit.map(([nd]) => nd.z),
-      marker: { size: hit.map(([nd]) => radius(nd.size) + 7), color: "rgba(0,0,0,0)", opacity: 1,
-                line: { color: "#F5A623", width: 5 } },
-      customdata: hit.map(([nd, c]) => `${c} vehicle${c === 1 ? "" : "s"} of the simulated day (${frame.day}) in <b>${nd.label || `group ${nd.id}`}</b>`),
-      hovertemplate: "%{customdata}<extra></extra>" });
-  }
-  const axis = (title, ticks) => ({ showgrid: true, gridcolor: ticks ? "#2A2F3A" : "#1E2330", showticklabels: ticks,
-    tickfont: { color: "#59616E", size: 9 }, zeroline: ticks, zerolinecolor: "#3A4050", backgroundcolor: "#0F1117",
-    showbackground: true, showspikes: false, title: { text: title, font: { color: ticks ? "#878E9C" : "#59616E", size: 11 } } });
-  Plotly.react("plot3d", traces, {
-    title: { text: `TDA Mapper — 3D Shape of Your Data<br><span style="font-size:11px;color:#878E9C">${int(g.nodes.length)} groups · ${int(g.edges.length)} connections · ${int(components(g))} separate clusters · ${int(records)} total records</span>`,
-             font: { color: "#D9DCE3", size: 15, family: "IBM Plex Mono, monospace" }, x: 0.5, xanchor: "center" },
-    paper_bgcolor: "#0F1117", plot_bgcolor: "#0F1117",
-    font: { color: "#D9DCE3", family: "IBM Plex Mono, monospace" },
-    margin: { l: 0, r: 0, t: 70, b: 10 }, showlegend: false,
-    scene: { bgcolor: "#0F1117", xaxis: axis("← Topological spread →", false), yaxis: axis("← Topological spread →", false),
-             zaxis: axis("Filter height (how different from average)", true), aspectmode: "cube",
-             camera: { eye: eyeXYZ(), center: { x: 0, y: 0, z: 0 } } },
-    uirevision: "keep",
-  }, PLOT_CONFIG);
+  const gv = MapperView.graphView(g);
+  const shown = MapperView.labelled(g, gv);
+  MapperView.keyTable($("mapper-table"), shown, gv, $("mapper-note"));
+  $("mapper-key").hidden = !shown.length;
+  $("plot3d").parentElement.classList.toggle("has-key", shown.length > 0);
+  const view = MapperView.VIEWS[state.tdaView];
+  Plotly.react("plot3d", view.traces(g, gv, shown, frame), view.layout(g, gv, eyeXYZ()), PLOT_CONFIG);
   state.plotReady = true;
 }
 
-function renderMapperKey(shown, risky) {
-  const table = $("mapper-table");
-  table.replaceChildren();
-  $("mapper-key").hidden = !shown.length;
-  $("plot3d").parentElement.classList.toggle("has-key", shown.length > 0);
-  if (!shown.length) return;
-  const head = table.createTHead().insertRow();
-  ["#", "Group", "What stands out", "Records", "On time", "Breakdowns"].forEach((h) => {
-    const th = document.createElement("th"); th.textContent = h; head.appendChild(th);
-  });
-  const body = table.createTBody();
-  shown.forEach((nd, i) => {
-    const tr = body.insertRow();
-    const num = tr.insertCell(); num.textContent = `${risky(nd) ? "⚠ " : ""}${i + 1}`;
-    if (risky(nd)) num.className = "risk";
-    tr.insertCell().textContent = nd.label || `group ${nd.id}`;
-    tr.insertCell().textContent = nd.profile || "–";
-    tr.insertCell().textContent = int(nd.size);
-    tr.insertCell().textContent = pct(nd.on_time);
-    tr.insertCell().textContent = pct(nd.breakdown_rate);
-  });
-}
-
-function components(g) {                                     // connected clusters of the Mapper graph
-  const parent = new Map(g.nodes.map((nd) => [nd.id, nd.id]));
-  const find = (a) => { while (parent.get(a) !== a) { parent.set(a, parent.get(parent.get(a))); a = parent.get(a); } return a; };
-  for (const [a, b] of g.edges) if (parent.has(a) && parent.has(b)) parent.set(find(a), find(b));
-  return new Set(g.nodes.map((nd) => find(nd.id))).size;
+// Mapper ↔ Galaxy: the same graph with another look; the camera goes to that view's default.
+function setTdaView(name) {
+  if (!MapperView.VIEWS[name]) return;
+  state.tdaView = name;
+  document.querySelectorAll(".seg button[data-tda]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tda === name)));
+  const e = MapperView.VIEWS[name].eye;
+  Object.assign(state.eye, { r: Math.hypot(e.x, e.y), z: e.z });
+  try { localStorage.setItem("mc-tda-view", name); } catch { /* storage unavailable */ }
+  if (state.observed && state.observed.graph) {
+    Plotly.purge("plot3d");                                  // new scene (background, aspect): start clean
+    state.plotReady = false;
+    state.shownFrame = null;
+    render3d(frameAt(fl.revealed));
+  }
 }
 
 function frameAt(n) {
@@ -205,10 +156,9 @@ function render3d(frame = state.frame) {
   if (obs && obs.graph) {
     if (state.shownFrame === frame && state.plotReady) return;
     state.shownFrame = frame;
-    $("cloud-title").textContent = "TDA Mapper — 3D shape of the fleet data";
-    const g = obs.graph;
-    const records = g.nodes.reduce((a, nd) => a + nd.size, 0);
-    $("cloud-hint").textContent = `Same layout as CortXplorer's TDA Mapper (${int(records)} records; a record can sit in overlapping groups). Size = records, colour = share of late deliveries (teal on time → red late). Numbers mark the largest groups and the groups at risk (⚠ below 70 % on time), explained in the table below. Orange rings: the groups holding the vehicles of the simulated day being shown.`;
+    const g = obs.graph, gv = MapperView.graphView(g);
+    $("cloud-title").textContent = state.tdaView === "galaxy" ? gv.title.replace("TDA Mapper", "TDA Galaxy") : gv.title;
+    $("cloud-hint").textContent = `${MapperView.hint(g, gv, state.tdaView)} ${MapperView.VIEWS[state.tdaView].ring}: ${gv.ring}.`;
     renderMapper3d(frame);
     return;
   }
@@ -219,7 +169,7 @@ function render3d(frame = state.frame) {
     g === -1 ? "#8a8f98" : REGIME_COLORS[i % REGIME_COLORS.length], 0.35, 2.4));
   if (state.frame && state.frame.highlight) {
     traces.push(cloudTrace(state.frame.highlight.map((k) => obs.points[k]),
-      `Vehicles of a simulated day (${state.frame.day})`, cssVar("--surrogate"), 0.95, 5));
+      `${gx.dash ? "Records" : "Vehicles"} of a simulated ${gx.dash ? gx.dash.period_label : "day"} (${state.frame.day})`, cssVar("--surrogate"), 0.95, 5));
   }
   const muted = cssVar("--muted"), grid = cssVar("--line");
   const axis = (i) => ({ showbackground: false, gridcolor: grid, zerolinecolor: grid, color: muted,
@@ -347,14 +297,14 @@ function waterfall(id, key, color, xTitle, xfmt) {
     traces.push({ type: "mesh3d", x: vx, y: vy, z: vz, i: I, j: J, k: K, color: color,
                   opacity: 0.12 + 0.4 * shade, flatshading: true, hoverinfo: "skip", showlegend: false });
     traces.push({
-      type: "scatter3d", mode: "lines", name: `after ${int(r.n)} days`,
+      type: "scatter3d", mode: "lines", name: `after ${int(r.n)} ${unitWord()}`,
       x, y: x.map(() => r.n), z,
       line: { color: rgba(color, Math.min(1, shade + 0.1)), width: j === rows.length - 1 ? 6 : 3 },
-      hovertemplate: `%{x:,.2f} after ${int(r.n)} days: %{z:.1%}<extra></extra>`,
+      hovertemplate: `%{x:,.2f} after ${int(r.n)} ${unitWord()}: %{z:.1%}<extra></extra>`,
       showlegend: j === 0 || j === rows.length - 1,
     });
   });
-  reactKeepingView(id, traces, surfaceLayout(scene(xTitle, "simulated days", "probability", xfmt), true));
+  reactKeepingView(id, traces, surfaceLayout(scene(xTitle, `simulated ${unitWord()}`, "probability", xfmt), true));
 }
 
 // Breakdowns × on-time share as 3D columns on a coarse grid over the central
@@ -457,6 +407,75 @@ function checkpointAt(n) {
   return best || fl.checkpoints[0] || null;
 }
 
+// ── scenario jobs: tiles and charts built from the job's own description ─────
+function setupDashboard(dash) {
+  document.querySelectorAll("#gx-charts .plot").forEach((el) => Plotly.purge(el));
+  Object.keys(view3d).filter((k) => k.startsWith("gx_")).forEach((k) => { delete view3d[k]; delete PLOT_ID[k]; });
+  gx.dash = dash || null;
+  $("fl-tiles").hidden = $("fl-charts").hidden = !!dash;
+  $("gx-tiles").hidden = $("gx-charts").hidden = !dash;
+  $("gx-tiles").replaceChildren();
+  $("gx-charts").replaceChildren();
+  $("fl-title").textContent = dash ? dash.title : "Fleet simulation";
+  if (!dash) return;
+  const el = (tag, cls, text, parent) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    if (parent) parent.appendChild(e);
+    return e;
+  };
+  $("gx-tiles").style.gridTemplateColumns = `repeat(${dash.tiles.length}, minmax(0, 1fr))`;
+  dash.tiles.forEach((t, i) => {
+    const tile = el("div", "fl-tile", null, $("gx-tiles"));
+    el("span", "k", t.label, tile);
+    el("span", `v ${TONE_INK[t.tone] || ""}`, "–", tile).id = `gx-t-${i}`;
+    el("span", "s", "\u00a0", tile).id = `gx-s-${i}`;
+  });
+  dash.charts.forEach((c) => {
+    const chart = `gx_${c.key}`, id = `gx-c-${c.key}`;
+    view3d[chart] = false;
+    PLOT_ID[chart] = id;
+    const card = el("div", "card", null, $("gx-charts"));
+    const head = el("div", "card-head", null, card);
+    el("h3", "", c.title, head);
+    const seg = el("div", "seg", null, head);
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", "View");
+    for (const mode of ["2d", "3d"]) {
+      const b = el("button", "", mode.toUpperCase(), seg);
+      b.type = "button"; b.dataset.chart = chart; b.dataset.mode = mode;
+      b.setAttribute("aria-pressed", String(mode === "2d"));
+      b.addEventListener("click", () => setView(chart, mode === "3d"));
+    }
+    const hint = el("p", "hint3d", `3D: the distribution after every 10% of the simulated ${dash.unit} — later slices stop changing once the estimate is stable.`, card);
+    hint.dataset.for = chart;
+    hint.hidden = true;
+    el("div", "plot fl-plot", null, card).id = id;
+  });
+  addZoomControls(dash.charts.map((c) => `gx-c-${c.key}`));
+}
+
+function renderGeneric(ck, draw3d, n) {
+  const d = gx.dash;
+  d.tiles.forEach((t, i) => {
+    $(`gx-t-${i}`).textContent = fmtVal(ck[t.key], t.fmt, t.unit);
+    $(`gx-s-${i}`).textContent = (t.sub || [])
+      .map((p) => (p.text != null ? p.text : fmtVal(p.key ? ck[p.key] : p.value, p.fmt, t.unit))).join("");
+  });
+  d.charts.forEach((c) => {
+    const id = `gx-c-${c.key}`, color = tone(c.tone), xfmt = c.fmt === "pct" ? ".0%" : "";
+    if (view3d[`gx_${c.key}`]) { if (draw3d) waterfall(id, c.series, color, c.x_title, xfmt); return; }
+    const lines = [];
+    c.lines.forEach((l) => {
+      const v = l.key ? ck[l.key] : l.value;
+      if (v != null) lines.push(vline(v, tone(l.tone), `${l.label} ${fmtVal(v, l.fmt, c.unit)}`, lines.length));
+    });
+    histogram(id, c.series, color, c.x_title, lines, xfmt);
+  });
+  if (draw3d) render3d(frameAt(n));
+}
+
 function renderDashboard(force3d = false) {
   const n = fl.revealed, obs = state.observed || {};
   frameNo += 1;
@@ -464,10 +483,11 @@ function renderDashboard(force3d = false) {
   const draw3d = force3d || frameNo % 3 === 0 || n >= received;       // 3D redraws at a third of the rate
   const ck = checkpointAt(n);
   const playing = fl.done && n < (fl.series.share || []).length;
-  $("fl-progress").textContent = `· ${int(n)} / ${int(fl.total)} simulated days` +
+  $("fl-progress").textContent = `· ${int(n)} / ${int(fl.total)} simulated ${unitWord()}` +
     (playing ? " · playing back the finished run" : "");
   $("progress-bar").style.width = fl.total ? `${(100 * n) / fl.total}%` : "0";
   if (!ck) return;
+  if (gx.dash) { renderGeneric(ck, draw3d, n); return; }
   $("fl-avail").textContent = pct(ck.fleet_availability_mean);
   $("fl-ontime").textContent = pct(ck.p_delivery_within_target);
   $("fl-fuel").textContent = `€${int(ck.fuel_cost_mean)}`;
@@ -542,6 +562,7 @@ function resetView() {
   Object.assign(fl, { series: {}, checkpoints: [], revealed: 0, total: 0, timer: null, done: false, paused: false });
   Object.assign(state, { received: 0, observed: null, frame: null, frames: [], shownFrame: null, status: null, plotReady: false });
   ["fl-vehicles", "fl-outcome", "fl-maint", "fl-share", "plot3d"].forEach((id) => Plotly.purge(id));
+  setupDashboard(null);
   ["fl-avail", "fl-ontime", "fl-fuel", "fl-break", "fl-sla"].forEach((id) => { $(id).textContent = "–"; });
   $("fl-report").hidden = true;
   $("fl-replay").disabled = true;
@@ -557,13 +578,13 @@ async function poll(generation) {
     const view = await api(`/v1/jobs/${state.jobId}/live?since=${state.received}`);
     if (generation !== state.generation) return;
     state.status = view.status;
-    const feed = view.live.fleet;
-    const p = (view.progress && view.progress.fleet) || { done: 0, total: 0 };
+    const feed = view.live.fleet || view.live.scenario;
+    const p = (view.progress && (view.progress.fleet || view.progress.scenario)) || { done: 0, total: 0 };
     const errs = Object.entries(view.errors || {}).map(([t, e]) => `${t}: ${e}`).join(" · ");
-    $("status-line").textContent = `simulation ${view.status} · ${int(p.done)} / ${int(p.total)} days computed in ${view.elapsed_s.toFixed(1)} s · ${view.dataset_id}` + (errs ? ` · ${errs}` : "");
+    $("status-line").textContent = `simulation ${view.status} · ${int(p.done)} / ${int(p.total)} ${unitWord()} computed in ${view.elapsed_s.toFixed(1)} s · ${view.dataset_id}` + (errs ? ` · ${errs}` : "");
     $("cancel").disabled = !ACTIVE.includes(view.status);
     if (!feed) {
-      showError("This job is not a fleet simulation, so there is nothing to show here.");
+      showError("This job has no simulation to play back (only fleet and scenario jobs are shown here).");
       return;
     }
     if (feed.null_from !== state.received) {                  // out of sync → restart from 0
@@ -571,7 +592,10 @@ async function poll(generation) {
       schedule(generation);
       return;
     }
-    if (feed.observed) state.observed = feed.observed;
+    if (feed.observed) {
+      state.observed = feed.observed;
+      setupDashboard(feed.observed.dashboard);
+    }
     for (const [k, v] of Object.entries(feed.series || {})) (fl.series[k] = fl.series[k] || []).push(...v);
     (fl.series.share = fl.series.share || []).push(...feed.null);
     state.received += feed.null.length;
@@ -616,10 +640,10 @@ function selectJob(jobId) {
 
 async function refreshJobs(selectId) {
   try {
-    const jobs = (await api("/v1/jobs")).filter((j) => j.tests.includes("fleet"));
+    const jobs = (await api("/v1/jobs")).filter((j) => j.tests.some((t) => t === "fleet" || t === "scenario"));
     const sel = $("job-select");
     sel.replaceChildren();
-    if (!jobs.length) sel.add(new Option("— no fleet jobs yet —", ""));
+    if (!jobs.length) sel.add(new Option("— no jobs yet —", ""));
     for (const j of jobs) {
       const time = new Date(j.created * 1000).toLocaleTimeString();
       sel.add(new Option(`${time} · ${j.dataset_id} · ${j.status}`, j.job_id));
@@ -679,7 +703,8 @@ function resetChart(id) {
   const el = $(id);
   if (!el || !el._fullLayout) return;
   if (id === "plot3d") {
-    Object.assign(state.eye, { r: Math.hypot(1.6, 1.6), z: 0.9 });
+    const e = MapperView.VIEWS[state.tdaView].eye;
+    Object.assign(state.eye, { r: Math.hypot(e.x, e.y), z: e.z });
     Plotly.relayout(el, { "scene.camera.eye": eyeXYZ() });
     return;
   }
@@ -689,8 +714,8 @@ function resetChart(id) {
   renderDashboard(true);
 }
 
-function addZoomControls() {
-  for (const id of ["fl-vehicles", "fl-outcome", "fl-maint", "fl-share", "plot3d"]) {
+function addZoomControls(ids = ["fl-vehicles", "fl-outcome", "fl-maint", "fl-share", "plot3d"]) {
+  for (const id of ids) {
     const plot = $(id);
     const head = plot && plot.closest(".card").querySelector(".card-head");
     if (!head || head.querySelector(".zoom")) continue;
@@ -750,9 +775,11 @@ async function init() {
     $("fl-report").hidden = true;
     startReveal();
   });
-  document.querySelectorAll(".seg button").forEach((b) => {
+  document.querySelectorAll(".seg button[data-chart]").forEach((b) => {
     b.addEventListener("click", () => setView(b.dataset.chart, b.dataset.mode === "3d"));
   });
+  document.querySelectorAll(".seg button[data-tda]").forEach((b) => b.addEventListener("click", () => setTdaView(b.dataset.tda)));
+  try { setTdaView(localStorage.getItem("mc-tda-view") || "mapper"); } catch { /* storage unavailable */ }
   try {
     const saved = JSON.parse(localStorage.getItem("mc-view3d") || "null");
     if (saved) Object.entries(saved).forEach(([k, v]) => { if (k in view3d && v) setView(k, true); });
@@ -782,7 +809,7 @@ async function init() {
   const jobs = await refreshJobs();
   const wanted = new URLSearchParams(location.search).get("job");
   const linked = wanted && jobs.find((j) => j.job_id === wanted);
-  if (wanted && !linked) showError(`Fleet job ${wanted} was not found (finished jobs expire after the configured TTL).`);
+  if (wanted && !linked) showError(`Job ${wanted} was not found (finished jobs expire after the configured TTL).`);
   const first = linked || jobs.find((j) => ACTIVE.includes(j.status)) || jobs[0];
   if (first) {
     $("job-select").value = first.job_id;

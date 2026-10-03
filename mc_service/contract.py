@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mc_service import CONTRACT_VERSION
 
-TEST_NAMES = ("loops", "relationships", "pre_event", "anomaly_stability", "mapper_stability", "fleet")
+TEST_NAMES = ("loops", "relationships", "pre_event", "anomaly_stability", "mapper_stability", "fleet", "scenario")
 
 
 class _Model(BaseModel):
@@ -214,11 +214,64 @@ class FleetOverrides(_Model):
     exclude_anomalies_above: float | None = Field(None, ge=0, le=1)
 
 
+class ScenarioMetric(_Model):
+    """One numeric column of the dataset, aggregated over the records of a simulated period."""
+    key: str = Field(min_length=1, max_length=60, pattern=r"^[A-Za-z0-9_]+$")
+    label: str = Field(min_length=1, max_length=80)
+    values: list[float | None]                             # one per record; null = missing
+    agg: Literal["sum", "mean"] = "mean"                   # period value = sum or mean of its records
+    unit: str | None = Field(None, max_length=12)          # shown with the numbers, e.g. "€", "h"
+    rate: bool = False                                     # mean of a 0/1 column → shown as a percentage
+    alert: float | None = None                             # report P(period value > alert); default: historical P90
+
+
+class ScenarioInput(_Model):
+    """Any table (pharma batches, fleet days, projects, …) with its TDA regime and ML anomaly score.
+
+    The simulation is domain-agnostic: it resamples the records into periods and reports the
+    spread of every metric, the high-risk records per period and which regimes drive the tails.
+    """
+    title: str | None = Field(None, max_length=120)        # dataset name, shown in headings
+    record_label: str = Field("records", max_length=30)    # what one row is, plural ("batches", "projects")
+    period_label: str = Field("period", max_length=30)     # what one simulated unit is ("day", "batch run")
+    record_id: list[str] | None = None
+    period: list[str | None] | None = None                 # block key per record (date, batch, …); sampled as blocks
+    regime: list[int]                                      # TDA cluster of the record (-1 = noise)
+    anomaly_score: list[float | None] | None = None        # ML anomaly score 0–1
+    regime_labels: dict[str, str] | None = None
+    metrics: list[ScenarioMetric] = Field(min_length=1, max_length=8)
+    period_size: int | None = Field(None, ge=1, le=100_000)   # records per simulated period; default: typical period
+    high_anomaly: float = Field(0.6, ge=0, le=1)           # a record at / above this score is "high-risk"
+    exclude_anomalies_above: float | None = Field(None, ge=0, le=1)
+    context: dict[str, Any] | None = None
+    mapper: dict[str, Any] | None = None                   # same shape as FleetInput.mapper
+
+    @model_validator(mode="after")
+    def _check(self):
+        n = len(self.regime)
+        if n == 0:
+            raise ValueError("regime is empty")
+        _same_len(n, record_id=self.record_id, period=self.period, anomaly_score=self.anomaly_score,
+                  **{f"metrics[{m.key}].values": m.values for m in self.metrics})
+        keys = [m.key for m in self.metrics]
+        if len(set(keys)) != len(keys):
+            raise ValueError("metric keys must be unique")
+        return self
+
+
+class ScenarioOverrides(_Model):
+    """What-if parameters for re-running a scenario job on the same records."""
+    period_size: int | None = Field(None, ge=1, le=100_000)
+    exclude_anomalies_above: float | None = Field(None, ge=0, le=1)
+    alerts: dict[str, float] | None = None                 # metric key → alert threshold
+
+
 class RerunRequest(_Model):
-    """``POST /v1/jobs/{id}/rerun``: same fleet records, new parameters. Only fields sent are changed;
+    """``POST /v1/jobs/{id}/rerun``: same records, new parameters. Only fields sent are changed;
     send ``exclude_anomalies_above: null`` explicitly to switch the anomaly exclusion off."""
     n_sims: int | None = Field(None, ge=19, le=100_000)
     fleet: FleetOverrides = Field(default_factory=FleetOverrides)
+    scenario: ScenarioOverrides = Field(default_factory=ScenarioOverrides)
 
 
 class SimulationRequest(_Model):
@@ -231,6 +284,7 @@ class SimulationRequest(_Model):
     anomaly_stability: AnomalyInput | None = None
     mapper_stability: MapperInput | None = None
     fleet: FleetInput | None = None
+    scenario: ScenarioInput | None = None
 
     @model_validator(mode="after")
     def _check(self):
@@ -262,4 +316,5 @@ class SimulationResponse(_Model):
     anomaly_stability: TestResult | None = None
     mapper_stability: TestResult | None = None
     fleet: TestResult | None = None
+    scenario: TestResult | None = None
     errors: dict[str, str] = Field(default_factory=dict)  # per test that failed: why

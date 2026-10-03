@@ -125,5 +125,14 @@ ul.plain { margin: 4px 0 8px; padding-left: 18px; color: var(--muted); }
   .field select { max-width: 100%; }
 }
 
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; margin-left: auto; }
+.seg button { border: 0; border-radius: 0; padding: 4px 10px; font-size: 12px; background: var(--panel); color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.mapper-plot { height: 560px; border-radius: 8px; overflow: hidden; background: #0F1117; margin-bottom: 10px; }
+#mapper-table { font-size: 12px; }
+#mapper-table th:nth-child(2), #mapper-table td:nth-child(2), #mapper-table th:nth-child(3), #mapper-table td:nth-child(3) { text-align: left; white-space: normal; }
+#mapper-table td:first-child { font-weight: 700; white-space: nowrap; }
+#mapper-table .risk { color: var(--bad); }
+
 /* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
 [hidden] { display: none !important; }

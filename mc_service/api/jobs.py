@@ -56,10 +56,11 @@ def result(job_id: str, request: Request):
 
 @router.post("/{job_id}/rerun", status_code=202)
 def rerun(job_id: str, body: RerunRequest, request: Request):
-    """Re-run a fleet job on the same records with new parameters (what-if)."""
+    """Re-run a fleet or scenario job on the same records with new parameters (what-if)."""
     job = _job(request, job_id)
     try:
-        new = _store(request).rerun(job, body.n_sims, body.fleet.model_dump(exclude_unset=True))
+        new = _store(request).rerun(job, body.n_sims, {"fleet": body.fleet.model_dump(exclude_unset=True),
+                                                       "scenario": body.scenario.model_dump(exclude_unset=True)})
     except ValueError as exc:
         raise HTTPException(409, str(exc)) from exc
     return {"job_id": new.id, "status": new.status, "tests": new.tests, "rerun_of": job_id}

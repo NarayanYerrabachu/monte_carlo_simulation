@@ -9,6 +9,7 @@ it receives. Two modes:
   and the (1 − α) noise band.
 - ``share_at_least`` (fleet): share of simulated days whose value reaches the
   target ``stat`` (e.g. P(on-time share ≥ SLA)), and the α-quantile (bad days).
+- ``none`` (scenario): no single headline statistic; the checkpoints carry the KPIs.
 """
 from __future__ import annotations
 
@@ -70,6 +71,8 @@ class LiveFeed:
         null = np.array([v for v in self.null if v is not None], dtype=float)
         if null.size == 0:
             return {"n": 0, "p_value": None, "noise_band": None, "share_at_least": None}
+        if self._mode == "none":
+            return {"n": int(null.size), "p_value": None, "noise_band": None, "share_at_least": None}
         if self._mode == "share_at_least":
             return {"n": int(null.size), "p_value": None, "share_at_least": float((null >= self._stat).mean()),
                     "noise_band": float(np.quantile(null, self._alpha))}

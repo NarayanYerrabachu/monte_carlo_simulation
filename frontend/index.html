@@ -18,8 +18,8 @@
     </div>
     <div class="controls">
       <label class="field">
-        <span>Fleet job</span>
-        <select id="job-select"><option value="">— no fleet jobs yet —</option></select>
+        <span>Job</span>
+        <select id="job-select"><option value="">— no jobs yet —</option></select>
       </label>
       <button id="refresh" class="ghost" title="Reload job list">↻</button>
       <label class="field">
@@ -36,13 +36,13 @@
 
   <div id="error" class="error" hidden></div>
   <div id="empty" class="notice" hidden>
-    No fleet simulation yet. In CortXplorer, load a fleet table (for example <code>data/samples/fleet_management_sample.csv</code>) and press <b>Monte Carlo ↗</b>. The simulation runs here.
+    No simulation yet. In CortXplorer, load any table (fleet, pharma, projects, …) and press <b>Monte Carlo ↗</b>. The simulation runs here.
   </div>
 
   <main class="page" id="live" hidden>
     <section class="fleet-live">
       <div class="live-head">
-        <h2>Fleet simulation <span class="muted" id="fl-progress">–</span></h2>
+        <h2><span id="fl-title">Fleet simulation</span> <span class="muted" id="fl-progress">–</span></h2>
         <div class="live-actions">
           <button id="fl-pause" class="ghost" type="button" disabled>Pause</button>
           <button id="fl-replay" class="ghost" type="button" disabled>Replay</button>
@@ -51,14 +51,16 @@
       </div>
       <div class="progress"><div id="progress-bar"></div></div>
       <div class="status-line" id="status-line"></div>
-      <div class="fl-tiles">
+      <div class="fl-tiles" id="gx-tiles" hidden></div>
+      <div class="fl-charts" id="gx-charts" hidden></div>
+      <div class="fl-tiles" id="fl-tiles">
         <div class="fl-tile"><span class="k">Fleet availability</span><span class="v good-ink" id="fl-avail">–</span><span class="s">vehicles with driver, no breakdown</span></div>
         <div class="fl-tile"><span class="k">On-time delivery (probability)</span><span class="v accent-ink" id="fl-ontime">–</span><span class="s" id="fl-ontime-s">deliveries within the target</span></div>
         <div class="fl-tile"><span class="k">Expected daily fuel cost</span><span class="v warm-ink" id="fl-fuel">–</span><span class="s" id="fl-fuel-s">&nbsp;</span></div>
         <div class="fl-tile"><span class="k">Breakdown risk</span><span class="v bad-ink" id="fl-break">–</span><span class="s" id="fl-break-s">&nbsp;</span></div>
         <div class="fl-tile"><span class="k">P(day meets SLA)</span><span class="v" id="fl-sla">–</span><span class="s" id="fl-sla-s">&nbsp;</span></div>
       </div>
-      <div class="fl-charts">
+      <div class="fl-charts" id="fl-charts">
         <div class="card"><div class="card-head"><h3>Vehicle requirement distribution</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="vehicles" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="vehicles" data-mode="3d" aria-pressed="false">3D</button></div></div><p class="hint3d" data-for="vehicles" hidden>3D: the distribution after every 10% of the simulated days — later slices stop changing once the estimate is stable.</p><div class="plot fl-plot" id="fl-vehicles"></div></div>
         <div class="card"><div class="card-head"><h3 id="fl-outcome-title">Delivery outcome (simulation)</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="outcome" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="outcome" data-mode="3d" aria-pressed="false">3D: breakdowns × on-time</button></div></div><p class="hint3d" data-for="outcome" hidden>3D: how often each combination of breakdowns in a day and that day's on-time share occurs (central 99 % of days). Blue line on the floor: the SLA.</p><div class="plot fl-plot" id="fl-outcome"></div></div>
         <div class="card"><div class="card-head"><h3>Maintenance cost distribution</h3><div class="seg" role="group" aria-label="View"><button type="button" data-chart="maint" data-mode="2d" aria-pressed="true">2D</button><button type="button" data-chart="maint" data-mode="3d" aria-pressed="false">3D</button></div></div><p class="hint3d" data-for="maint" hidden>3D: the distribution after every 10% of the simulated days.</p><div class="plot fl-plot" id="fl-maint"></div></div>
@@ -69,6 +71,7 @@
     <section class="card cloud">
       <div class="card-head">
         <h2 id="cloud-title">Fleet records by TDA regime</h2>
+        <div class="seg" role="group" aria-label="TDA view"><button type="button" data-tda="mapper" aria-pressed="true">Mapper</button><button type="button" data-tda="galaxy" aria-pressed="false">Galaxy</button></div>
         <label class="toggle"><input id="rotate" type="checkbox" checked> rotate</label>
       </div>
       <p class="hint" id="cloud-hint">Every vehicle-day record, coloured by the regime TDA assigned it. Orange: the vehicles drawn for the simulated day being shown.</p>
@@ -77,12 +80,13 @@
         <div class="mapper-key" id="mapper-key" hidden>
           <h3>Labelled groups</h3>
           <div class="table-wrap"><table id="mapper-table"></table></div>
-          <p class="hint">Numbers match the 3D view. ⚠ = below 70 % on time. Hover any sphere for its label.</p>
+          <p class="hint" id="mapper-note">Numbers match the 3D view. ⚠ = below 70 % on time. Hover any sphere for its label.</p>
         </div>
       </div>
     </section>
   </main>
 
+  <script src="/js/mapper_view.js"></script>
   <script src="/js/viewer.js"></script>
 </body>
 </html>
