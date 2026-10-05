@@ -6,13 +6,14 @@ reported per test as not implemented (the other tests of the job still run).
 """
 from __future__ import annotations
 
-from mc_service.simulations import fleet, loops, scenario
+from mc_service.simulations import fleet, loops, relationships, scenario
 from mc_service.simulations.base import RunContext, Runner
 
 RUNNERS: dict[str, Runner] = {
     "loops": loops.run,
     "fleet": fleet.run,
     "scenario": scenario.run,
+    "relationships": relationships.run,
 }
 
 __all__ = ["RUNNERS", "RunContext", "Runner"]

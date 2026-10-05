@@ -327,9 +327,11 @@ def _fleet_story(f: dict, job: dict) -> list:
                  f"{num(a['excluded'])} operating records with anomaly score ≥ {a['threshold']} excluded; "
                  f"{num(a.get('kept_events'))} flagged breakdown / absence records kept.")
     story += _mapper_story(job.get("graph"))
+    story += _relationships_story(job.get("relationships"))
     story += [KeepTogether(_section("Context", "TDA / ML findings and data quality")
                            + [Paragraph(n, S["body"]) for n in notes])]
     story += [KeepTogether(_section("Quality", "Are the scenarios enough?") + [_img(png["convergence"])])]
+    story += _backtest_story(s.get("backtest"))
     return story
 
 
@@ -409,6 +411,8 @@ def _fleet_xlsx(f: dict, job: dict, wb: Workbook) -> None:
 
     _mapper_sheet(wb, job.get("graph"))
     _convergence_sheet(wb, s["convergence"], "P(meet SLA)")
+    _relationships_sheet(wb, job.get("relationships"))
+    _backtest_sheet(wb, s.get("backtest"))
     _context_sheet(wb, s.get("context"))
 
 
@@ -671,6 +675,137 @@ def _mapper_sheet(wb: Workbook, g: dict | None) -> None:
         ws.add_image(img, anchor)
 
 
+# ── relationship significance (when the job carried the test) ───────────────
+def _p(v: float) -> str:
+    return "< 0.001" if v < 0.001 else f"{v:.3f}"
+
+
+def _relationships_text(rel: dict) -> str:
+    s, c = rel["summary"], rel["config"]
+    return (f"CortXplorer links a {s['label_a']} label with a {s['label_b']} label when their records concentrate in the same "
+            f"Mapper groups (lift > 1). Each lift is compared with {num(rel['n_completed'])} runs in which the labels were "
+            f"re-assigned at random ({c['null']}): p = how often chance gives a lift this extreme, q = the same after "
+            f"correcting for testing {num(s['n_pairs'])} pairs. Significant at q ≤ {c['alpha']}. With many records even a "
+            "small lift becomes significant, so read the lift as the size of the effect.")
+
+
+def _relationships_story(rel: dict | None, limit: int = 15) -> list:
+    if not rel:
+        return []
+    title, s = "Are the TDA relationships real?", rel["summary"]
+    if not rel["results"]:
+        return [KeepTogether(_section("TDA", title, s.get("note") or "No relationship could be tested."))]
+    rows = [_th([s["label_a"], s["label_b"], "Lift", "By chance (95%)", "Both", "p", "q", "Verdict"])]
+    style = _table_style()
+    for i, r in enumerate(rel["results"][:limit], 1):
+        rows.append([Paragraph(r["a"], S["cell"]), Paragraph(r["b"], S["cell"]), f"×{r['lift']:.2f}",
+                     f"×{r['null_lo']:.2f} – ×{r['null_hi']:.2f}", num(r["n_cooccur"]), _p(r["p_value"]), _p(r["q_value"]),
+                     Paragraph(r["verdict"], S["cell"])])
+        colour = "#5f6b66" if not r["significant"] else TONE_HEX["good"] if r["direction"] == "above" else TONE_HEX["bad"]
+        style.add("TEXTCOLOR", (2, i), (2, i), rl_colors.HexColor(colour))
+    t = Table(rows, colWidths=[3.2 * cm, 3.2 * cm, 1.5 * cm, 2.7 * cm, 1.3 * cm, 1.4 * cm, 1.4 * cm, 2.3 * cm], repeatRows=1)
+    t.setStyle(style)
+    head = (f'<font name="DejaVu-Bold">{num(s["n_significant"])} of {num(s["n_pairs"])} relationships are significant.</font> '
+            + _relationships_text(rel))
+    more = len(rel["results"]) - limit
+    tail = [Paragraph(f"{more} more pairs are in the Excel report (sheet “TDA relationships”).", S["small"])] if more > 0 else []
+    return [KeepTogether(_section("TDA", title, head) + [t] + tail)]
+
+
+def _relationships_sheet(wb: Workbook, rel: dict | None) -> None:
+    if not rel:
+        return
+    ws = wb.create_sheet("TDA relationships")
+    ws["A1"] = "Are the TDA relationships real? Permutation test of the Mapper-footprint lift"
+    ws["A1"].font = Font(bold=True, size=14)
+    s = rel["summary"]
+    if not rel["results"]:
+        ws["A2"] = s.get("note") or "No relationship could be tested."
+        _widths(ws, [90])
+        return
+    ws["A2"] = _relationships_text(rel)
+    ws["A2"].alignment = Alignment(wrap_text=True, vertical="top")
+    ws.row_dimensions[2].height = 75
+    ws.merge_cells("A2:K2")
+    ws["A3"] = f"{s['n_significant']} of {s['n_pairs']} pairs significant"
+    ws["A3"].font = Font(bold=True)
+    _head(ws, 5, [s["label_a"], s["label_b"], "Lift", "Enrichment A in B", "Enrichment B in A", "Records with both",
+                  "Chance mean", "Chance 2.5%", "Chance 97.5%", "p-value", "q-value", "Significant", "Verdict"])
+    for i, r in enumerate(rel["results"], 6):
+        row = [r["a"], r["b"], r["lift"], r["enrichment_a_in_b"], r["enrichment_b_in_a"], r["n_cooccur"], r["null_mean"],
+               r["null_lo"], r["null_hi"], r["p_value"], r["q_value"], "yes" if r["significant"] else "no", r["verdict"]]
+        for j, v in enumerate(row, 1):
+            cell = ws.cell(row=i, column=j, value=v)
+            if j in (3, 4, 5, 7, 8, 9):
+                cell.number_format = "0.00"
+            elif j in (10, 11):
+                cell.number_format = "0.0000"
+    _widths(ws, [26, 26, 8, 16, 16, 16, 12, 12, 12, 10, 10, 11, 30])
+
+
+# ── backtest (fleet and scenario reports) ───────────────────────────────────
+VERDICT_HEX = {"holds": TONE_HEX["good"], "partly holds": TONE_HEX["warm"], "does not hold": TONE_HEX["bad"]}
+
+
+def _backtest_text(bt: dict) -> str:
+    return (f"The simulation was fed only the first {num(bt['train_periods'])} {bt['unit']} (up to {bt['train_until']}); the "
+            f"last {num(bt['test_periods'])} ({bt['test_from']} – {bt['test_until']}) were held back and compared with its "
+            f"{bt['band'][0]}–{bt['band'][1]}% range. If the past describes the future, about "
+            f"{pct(bt['expected_coverage'], 0)} of the held-back {bt['unit']} fall inside the range; here "
+            f"{pct(bt['coverage'], 0)} do on average. ≥ 80% = holds, 60–80% = partly holds, below = does not hold.")
+
+
+def _backtest_story(bt: dict | None) -> list:
+    if not bt:                                         # jobs from before the backtest existed
+        return []
+    title = "Backtest: does it hold on periods the simulation never saw?"
+    if not bt["available"]:
+        return [KeepTogether(_section("Quality", title, f"Not available: {bt['reason']}."))]
+    rows = [_th(["Metric", f"Simulated range ({bt['band'][0]}–{bt['band'][1]}%)", "Simulated mean", "Observed (held back, mean)",
+                 "Inside the range", "Verdict"])]
+    style = _table_style()
+    for i, r in enumerate(bt["metrics"], 1):
+        f = lambda v, r=r: _fv(v, r["fmt"], r.get("unit"))
+        rows.append([Paragraph(r["label"], S["cell"]), f"{f(r['sim_lo'])} – {f(r['sim_hi'])}", f(r["sim_mean"]),
+                     f(r["observed_mean"]), pct(r["coverage"], 0), r["verdict"]])
+        style.add("TEXTCOLOR", (5, i), (5, i), rl_colors.HexColor(VERDICT_HEX.get(r["verdict"], "#17201c")))
+    t = Table(rows, colWidths=[4.2 * cm, 3.6 * cm, 2.4 * cm, 2.6 * cm, 1.9 * cm, 2.3 * cm], repeatRows=1)
+    t.setStyle(style)
+    head = (f'Overall: <font name="DejaVu-Bold" color="{VERDICT_HEX.get(bt["verdict"], "#17201c")}">{bt["verdict"]}</font>. '
+            + _backtest_text(bt))
+    return [KeepTogether(_section("Quality", title, head) + [t])]
+
+
+def _backtest_sheet(wb: Workbook, bt: dict | None) -> None:
+    if not bt:
+        return
+    ws = wb.create_sheet("Backtest")
+    ws["A1"] = "Backtest: does the simulation hold on periods it never saw?"
+    ws["A1"].font = Font(bold=True, size=14)
+    if not bt["available"]:
+        ws["A2"] = f"Not available: {bt['reason']}."
+        _widths(ws, [90])
+        return
+    ws["A2"] = _backtest_text(bt)
+    ws["A2"].alignment = Alignment(wrap_text=True, vertical="top")
+    ws.row_dimensions[2].height = 60
+    ws.merge_cells("A2:H2")
+    ws["A3"] = "Overall verdict"
+    ws["B3"] = bt["verdict"]
+    ws["B3"].font = Font(bold=True, color=VERDICT_HEX.get(bt["verdict"], "#17201c")[1:])
+    _head(ws, 5, ["Metric", "Unit", "Simulated P5", "Simulated P95", "Simulated mean", "Observed mean (held back)",
+                  "Observed min", "Observed max", "Inside the range", "Verdict"])
+    for i, r in enumerate(bt["metrics"], 6):
+        number = "0.0%" if r["fmt"] == "pct" else "#,##0" if r["fmt"] == "int" else "#,##0.00"
+        ws.cell(row=i, column=1, value=r["label"])
+        ws.cell(row=i, column=2, value=r.get("unit"))
+        for j, key in enumerate(("sim_lo", "sim_hi", "sim_mean", "observed_mean", "observed_min", "observed_max"), 3):
+            ws.cell(row=i, column=j, value=r[key]).number_format = number
+        ws.cell(row=i, column=9, value=r["coverage"]).number_format = "0%"
+        ws.cell(row=i, column=10, value=r["verdict"]).font = Font(bold=True, color=VERDICT_HEX.get(r["verdict"], "#17201c")[1:])
+    _widths(ws, [30, 8, 14, 14, 14, 24, 14, 14, 16, 16])
+
+
 def _context_sheet(wb: Workbook, ctx: dict | None) -> None:
     if not ctx:
         return
@@ -793,6 +928,7 @@ def _scenario_story(sc: dict, job: dict) -> list:
     note = " ".join(x for x in (note, _regime_note(len(sc["results"]), "by their number of high-risk records")) if x) or None
     story += [KeepTogether(_section("TDA", "Where the risk comes from — TDA regimes", note) + [tr])]
     story += _mapper_story(job.get("graph"))
+    story += _relationships_story(job.get("relationships"))
 
     notes = []
     if ctx:
@@ -808,6 +944,7 @@ def _scenario_story(sc: dict, job: dict) -> list:
                            + [Paragraph(n, S["body"]) for n in notes])]
     if "convergence" in png:
         story += [KeepTogether(_section("Quality", "Are the scenarios enough?") + [_img(png["convergence"])])]
+    story += _backtest_story(s.get("backtest"))
     return story
 
 
@@ -897,6 +1034,8 @@ def _scenario_xlsx(sc: dict, job: dict, wb: Workbook) -> None:
 
     if s["convergence"]["n"]:
         _convergence_sheet(wb, s["convergence"], s["convergence"].get("label", "estimate"), "#,##0.00")
+    _relationships_sheet(wb, job.get("relationships"))
+    _backtest_sheet(wb, s.get("backtest"))
     _context_sheet(wb, s.get("context"))
 
 
@@ -997,7 +1136,8 @@ def kind(result: dict[str, Any]) -> str:
 
 def build_pdf(result: dict[str, Any], graph: dict | None = None) -> bytes:
     """``graph``: the TDA Mapper graph the job was sent (from its live feed), if any."""
-    job = {"dataset_id": result["dataset_id"], "job_id": result["job_id"], "graph": graph}
+    job = {"dataset_id": result["dataset_id"], "job_id": result["job_id"], "graph": graph,
+           "relationships": result.get("relationships")}
     what = kind(result)
     story = {"fleet": _fleet_story, "scenario": _scenario_story, "loops": _loops_story}[what](result[what], job)
     buf = io.BytesIO()
@@ -1009,7 +1149,8 @@ def build_pdf(result: dict[str, Any], graph: dict | None = None) -> bytes:
 
 
 def build_xlsx(result: dict[str, Any], graph: dict | None = None) -> bytes:
-    job = {"dataset_id": result["dataset_id"], "job_id": result["job_id"], "graph": graph}
+    job = {"dataset_id": result["dataset_id"], "job_id": result["job_id"], "graph": graph,
+           "relationships": result.get("relationships")}
     wb = Workbook()
     what = kind(result)
     {"fleet": _fleet_xlsx, "scenario": _scenario_xlsx, "loops": _loops_xlsx}[what](result[what], job, wb)

@@ -31,8 +31,17 @@ Tests:
   regime how over-represented it is in the periods where a metric is in its top 5%. The result
   describes its own dashboard (`summary.dashboard`: tiles and charts), so the live viewer and the
   report render it in the same format as the fleet dashboard without knowing the columns.
-- **Planned (phases 3–5):** relationship permutation, pre-event pseudo-events, and anomaly and Mapper
-  stability.
+- **Relationship significance (`relationships`).** Are CortXplorer's topological (TDA) relationships
+  real? Each label pair's lift (records of one label inside the other's Mapper footprint) is compared
+  with 999 runs in which the labels are re-assigned to the records at random — or shifted circularly
+  within each block for time series, which keeps runs of a label together. Returns a two-sided
+  p-value, a Benjamini–Hochberg q-value and a verdict per pair. CortXplorer sends it together with
+  the simulation, so the job report (HTML, PDF, Excel) has an "Are the TDA relationships real?" section.
+- **Backtest (part of `fleet` and `scenario`).** The periods are split in time order: the simulation's
+  draws from the first 80% are compared with the observed values of the last 20%. About 90% of the
+  held-back periods should fall inside the simulated 5–95% range; the report gives the share per metric
+  and a verdict (holds / partly holds / does not hold). It needs at least 10 periods and no extra run.
+- **Planned (phases 4–5):** pre-event pseudo-events, and anomaly and Mapper stability.
 
 ## Run
 
@@ -178,6 +187,7 @@ identical, and the same seed always gives the same report.
 - The fleet-management report is done: HTML, PDF and Excel.
 - The scenario simulation (any dataset) is done: live viewer, HTML report, PDF and Excel, what-if re-runs.
   Fleet and scenario reports include the TDA Mapper graph (3D picture and labelled groups).
-- The relationship, pre-event and stability tests arrive in phases 3–5. Until then, requesting one of
-  them reports `"not implemented yet"`.
+- Phase 3 is done: the relationship significance test, and the backtest of the simulations.
+- The pre-event and stability tests arrive in phases 4–5. Until then, requesting one of them reports
+  `"not implemented yet"`.
 See [docs/implementations/monte-carlo-simulation.md](docs/implementations/monte-carlo-simulation.md).

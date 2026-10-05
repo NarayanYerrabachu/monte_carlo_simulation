@@ -14,7 +14,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mc_service import CONTRACT_VERSION
 
-TEST_NAMES = ("loops", "relationships", "pre_event", "anomaly_stability", "mapper_stability", "fleet", "scenario")
+# order = run order within a job: the simulation first (the live viewer plays it), then the significance tests
+TEST_NAMES = ("fleet", "scenario", "loops", "relationships", "pre_event", "anomaly_stability", "mapper_stability")
 
 
 class _Model(BaseModel):
@@ -71,6 +72,9 @@ class RelationshipsInput(_Model):
     node_members: list[list[int]]                         # Mapper membership (record positions)
     region_lift: float = Field(2.0, gt=0)
     min_label_records: int = Field(2, ge=1)
+    min_label_support: int = Field(20, ge=1)              # labels with fewer records are not tested (lift = noise)
+    label_a_name: str = Field("Group A", max_length=80)   # what the two label groups are called (column names)
+    label_b_name: str = Field("Group B", max_length=80)
     blocks: list[str] | None = None                    # ticker per record → circular shift within block
     order: list[int] | None = None                     # time order within block
 

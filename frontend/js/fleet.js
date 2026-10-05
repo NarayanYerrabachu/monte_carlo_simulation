@@ -255,6 +255,74 @@ function renderScenario(sc) {
     : "");
 }
 
+// ── relationship significance (when the job carried the test) ───────────────
+function renderRelationships(rel, error) {
+  const card = $("rel-card"), tb = $("rel-table"), badge = $("rel-verdict");
+  card.hidden = !rel && !error;
+  tb.replaceChildren();
+  badge.textContent = "";
+  badge.className = "verdict";
+  if (error) { $("rel-note").textContent = `The relationship test failed: ${error}`; return; }
+  if (!rel) return;
+  const s = rel.summary, cfg = rel.config;
+  if (!rel.results.length) { $("rel-note").textContent = s.note || "No relationship could be tested."; return; }
+  badge.textContent = `${num(s.n_significant)} of ${num(s.n_pairs)} significant`;
+  badge.classList.add(s.n_significant ? "holds" : "partly");
+  $("rel-note").textContent = `CortXplorer links a ${s.label_a} label with a ${s.label_b} label when their records concentrate in the same Mapper groups (lift > 1). `
+    + `Here each lift is compared with ${num(rel.n_completed)} runs in which the labels were re-assigned at random (${cfg.null}): `
+    + `p = how often chance gives a lift this extreme, q = the same after correcting for testing ${num(s.n_pairs)} pairs. Significant at q ≤ ${cfg.alpha}. `
+    + "With many records even a small lift becomes significant, so read the lift as the size of the effect.";
+  const head = tb.createTHead().insertRow();
+  [s.label_a, s.label_b, "Lift", "By chance (95% range)", "Records with both", "p", "q", "Verdict"].forEach((h) => node("th", "", h, head));
+  const body = tb.createTBody();
+  rel.results.forEach((r) => {
+    const tr = body.insertRow();
+    [r.a, r.b, `×${r.lift.toFixed(2)}`, `×${r.null_lo.toFixed(2)} – ×${r.null_hi.toFixed(2)}`, num(r.n_cooccur),
+     r.p_value < 0.001 ? "< 0.001" : r.p_value.toFixed(3), r.q_value < 0.001 ? "< 0.001" : r.q_value.toFixed(3)]
+      .forEach((v) => { tr.insertCell().textContent = v; });
+    const cell = tr.insertCell();
+    cell.textContent = r.verdict;
+    cell.className = !r.significant ? "none" : r.direction === "above" ? "holds" : "fails";
+  });
+  if (tb.rows[0]) tb.rows[0].cells[1].style.textAlign = "left";
+  [...body.rows].forEach((row) => { row.cells[1].style.textAlign = "left"; });
+}
+
+// ── backtest (both kinds): simulated from the first periods, checked on the last ─
+const VERDICT_CLASS = { holds: "holds", "partly holds": "partly", "does not hold": "fails" };
+
+function renderBacktest(bt) {
+  const card = $("backtest-card");
+  card.hidden = !bt;                                         // jobs from before the backtest existed
+  if (!bt) return;
+  const tb = $("backtest"), badge = $("backtest-verdict");
+  tb.replaceChildren();
+  if (!bt.available) {
+    badge.textContent = "";
+    badge.className = "verdict";
+    $("backtest-note").textContent = `Not available: ${bt.reason}.`;
+    return;
+  }
+  badge.textContent = bt.verdict;
+  badge.className = `verdict ${VERDICT_CLASS[bt.verdict] || ""}`;
+  $("backtest-note").textContent = `The simulation was fed only the first ${num(bt.train_periods)} ${bt.unit} (up to ${bt.train_until}); `
+    + `the last ${num(bt.test_periods)} (${bt.test_from} – ${bt.test_until}) were held back and compared with its ${bt.band[0]}–${bt.band[1]}% range. `
+    + `If the past describes the future, about ${pct(bt.expected_coverage, 0)} of the held-back ${bt.unit} fall inside the range; `
+    + `here ${pct(bt.coverage, 0)} do on average. ≥ 80% = holds, 60–80% = partly holds, below = does not hold.`;
+  const head = tb.createTHead().insertRow();
+  ["Metric", `Simulated range (${bt.band[0]}–${bt.band[1]}%)`, "Simulated mean", "Observed in held-back (mean)", "Observed min – max",
+   "Inside the range", "Verdict"].forEach((h) => node("th", "", h, head));
+  const body = tb.createTBody();
+  bt.metrics.forEach((r) => {
+    const tr = body.insertRow(), f = (v) => fmtVal(v, r.fmt, r.unit);
+    [r.label, `${f(r.sim_lo)} – ${f(r.sim_hi)}`, f(r.sim_mean), f(r.observed_mean), `${f(r.observed_min)} – ${f(r.observed_max)}`,
+     pct(r.coverage, 0)].forEach((v) => { tr.insertCell().textContent = v; });
+    const cell = tr.insertCell();
+    cell.textContent = r.verdict;
+    cell.className = VERDICT_CLASS[r.verdict] || "";
+  });
+}
+
 // ── TDA Mapper (both kinds): the graph the job was sent ─────────────────────
 async function renderMapper(jobId, generation) {
   $("mapper-card").hidden = true;
@@ -447,6 +515,8 @@ async function poll(generation) {
     if (res.fleet || res.scenario) {
       $("whatif").hidden = false;
       if (res.fleet) render(res.fleet); else renderScenario(res.scenario);
+      renderBacktest((res.fleet || res.scenario).summary.backtest);
+      renderRelationships(res.relationships, (res.errors || {}).relationships);
       renderMapper(state.jobId, generation);
     } else {
       showError(`The simulation failed: ${Object.values(res.errors || {}).join("; ") || "no result"}`);

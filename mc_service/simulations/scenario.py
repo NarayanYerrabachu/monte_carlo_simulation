@@ -26,6 +26,7 @@ import numpy as np
 
 from mc_service.contract import ScenarioInput, ScenarioMetric
 from mc_service.engine import simulate, spawn_seeds
+from mc_service.simulations import backtest
 from mc_service.simulations.base import RunContext
 
 HIST_BINS = 30
@@ -204,10 +205,11 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
         return b, rng.choice(blocks[b] if blocks else pool_ix, size=size)
 
     def draw(rng: np.random.Generator) -> np.ndarray:
-        _, pick = pick_records(rng)
+        """One simulated period: metric values, high-risk count, records per regime, period drawn."""
+        b, pick = pick_records(rng)
         tot = stats[pick].sum(axis=0)
         return np.concatenate([aggregate(tot[:m], tot[m:2 * m], size), [tot[2 * m]],
-                               np.bincount(reg_pos[pick], minlength=R)])
+                               np.bincount(reg_pos[pick], minlength=R), [-1 if b is None else b]])
 
     # ── live viewer ─────────────────────────────────────────────────────────
     graph, record_nodes = _mapper_graph(s.mapper, n, M, score, metrics)
@@ -263,7 +265,7 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
                            nodes=[[k, c] for k, c in sorted(nodes.items())])
 
     res = simulate(draw, ctx.sim_config(chunk_size=max(1, ctx.settings.n_sims // 100), on_chunk=on_chunk))
-    sim = res.null.reshape(-1, m + 1 + R) if res.n_completed else np.zeros((0, m + 1 + R))
+    sim = res.null.reshape(-1, m + 2 + R) if res.n_completed else np.zeros((0, m + 2 + R))
     kpi = kpis(sim) if res.n_completed else {"n": 0}
     kpi["period_size"] = size
 
@@ -282,7 +284,7 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
 
     # regimes: observed profile on the sampling pool, and how over-represented each regime is
     # in the periods where a metric is high (above its 95th percentile)
-    reg_counts = sim[:, m + 1:]
+    reg_counts = sim[:, m + 1:m + 1 + R]
     tails = []
     for k, met in enumerate(metrics[:3]):
         col = sim[:, k]
@@ -306,6 +308,17 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
             "metrics": {met.key: (float(mu[k]) if np.isfinite(mu[k]) else None) for k, met in enumerate(metrics)},
             "tail_lift": {t["key"]: (float(t["lift"][j]) if np.isfinite(t["lift"][j]) else None) for t in tails},
         })
+
+    # backtest: simulate from the first 80 % of the periods, compare with the last 20 %
+    if blocks:
+        high_obs = np.array([stats[b, 2 * m].sum() * size / b.size for b in blocks])
+        bt = backtest.run(sim[:, -1], block_names, [
+            *({"key": met.key, "label": met.label, "fmt": _fmt(met), "unit": met.unit,
+               "sim": sim[:, k], "observed": hist_periods[:, k]} for k, met in enumerate(metrics)),
+            *([{"key": "high", "label": "High-risk records", "fmt": "num", "unit": None,
+                "sim": sim[:, m], "observed": high_obs}] if has_scores else [])], unit)
+    else:
+        bt = backtest.unavailable("the data has no usable periods, so there is no time order to hold out")
 
     def spread(x: np.ndarray) -> dict[str, float] | None:
         x = x[np.isfinite(x)]
@@ -335,7 +348,7 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
             "anomalies": {"threshold": s.exclude_anomalies_above, "excluded": int(excluded.sum()),
                           "high_risk": int(high.sum()),
                           "record_ids": [s.record_id[i] for i in np.flatnonzero(excluded)[:50]] if s.record_id else []},
-            "convergence": convergence,
+            "convergence": convergence, "backtest": bt,
             "inputs": {"records": n, "periods": len(blocks) if blocks else None, "period_size": size,
                        "metrics": {met.key: spread(M[pool, k]) for k, met in enumerate(metrics)}},
             "context": s.context,

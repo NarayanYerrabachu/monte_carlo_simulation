@@ -112,3 +112,28 @@ def test_mapper_groups_get_profile_and_frames_mark_them():
     assert bad["risk"] == pytest.approx(0.8) and bad["profile"] == "high Deviations · high Cost"
     assert g["view"]["color_key"] == "risk" and g["edges"] == [[0, 1]]
     assert any(f["nodes"] for f in live.frames)
+
+
+def test_backtest_holds_on_stable_data_and_fails_on_a_shift():
+    """Simulated from the first 80 % of the periods; the last 20 % must fall in the 5–95 % band."""
+    bt = _run(_batches(n_periods=30), n_sims=2000)["summary"]["backtest"]
+    assert bt["available"] and (bt["train_periods"], bt["test_periods"]) == (24, 6)
+    assert bt["train_until"] == "2026-W24" and bt["test_from"] == "2026-W25"
+    assert bt["verdict"] == "holds" and all(r["coverage"] >= 0.8 for r in bt["metrics"])
+
+    rows = _batches(n_periods=30)
+    cost = rows["metrics"][2]["values"]
+    for i, period in enumerate(rows["period"]):
+        if period >= "2026-W25":                      # the hold-out weeks cost 40 % more than anything before
+            cost[i] *= 1.4
+    by_key = {r["key"]: r for r in _run(rows, n_sims=2000)["summary"]["backtest"]["metrics"]}
+    assert by_key["cost"]["coverage"] == 0.0 and by_key["cost"]["verdict"] == "does not hold"
+    assert by_key["yield_pct"]["verdict"] == "holds"  # the other metrics are unaffected
+
+
+def test_backtest_needs_enough_periods():
+    assert _run(_batches(n_periods=8))["summary"]["backtest"]["available"] is False
+    rows = _batches()
+    rows.pop("period")
+    bt = _run(rows)["summary"]["backtest"]
+    assert bt["available"] is False and "no usable periods" in bt["reason"]

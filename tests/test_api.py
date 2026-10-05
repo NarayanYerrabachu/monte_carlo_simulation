@@ -88,13 +88,13 @@ def test_same_request_same_result(client, fake_loops):
 
 
 def test_unimplemented_test_reported_per_test(client, fake_loops):
-    req = _loops_request(relationships={"labels_a": ["a", "b"], "labels_b": ["x", "y"],
-                                        "node_members": [[0, 1]]})
+    req = _loops_request(anomaly_stability={"X": [[0.0], [1.0]], "record_ids": ["a", "b"], "cluster_labels": [0, 0],
+                                            "contamination": 0.1})
     job_id = data(client.post("/v1/jobs", json=req))["job_id"]
     assert _wait(client, job_id)["status"] == "done"
     res = data(client.get(f"/v1/jobs/{job_id}/result"))
     assert res["loops"] is not None
-    assert res["errors"] == {"relationships": "not implemented yet"}
+    assert res["errors"] == {"anomaly_stability": "not implemented yet"}
 
 
 def test_all_tests_failing_marks_job_failed(client, monkeypatch):

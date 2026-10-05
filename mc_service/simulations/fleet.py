@@ -30,6 +30,7 @@ import numpy as np
 
 from mc_service.contract import FleetInput
 from mc_service.engine import percentile_ci, simulate, spawn_seeds
+from mc_service.simulations import backtest
 from mc_service.simulations.base import RunContext
 
 HIST_BINS = 30
@@ -38,7 +39,7 @@ VIZ_AXES = ("route_duration_h", "fuel_l", "deliveries_on_time")
 VIZ_AXIS_TITLES = ("route duration (h)", "fuel (L)", "on-time deliveries")
 # columns of the per-simulation result vector
 COLS = ("demand", "on_time", "within_target", "breakdowns", "operating", "fuel_l", "fuel_cost",
-        "maint_cost", "vehicles_required")
+        "maint_cost", "vehicles_required", "day")           # day: index of the historical day drawn
 
 
 def _hist(x: np.ndarray, bins: int = HIST_BINS) -> dict[str, list]:
@@ -202,7 +203,7 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
         served, within_t = min(demand, tot[0]), min(demand, tot[1])
         per_vehicle = tot[0] / fleet
         v_req = math.ceil(demand / per_vehicle) if per_vehicle > 0 else np.nan
-        return np.array([demand, served, within_t, *tot[2:], v_req])
+        return np.array([demand, served, within_t, *tot[2:], v_req, d])
 
     # ── live viewer: records in 3D coloured by TDA regime; each simulated day highlights its vehicles
     viz = np.arange(n) if n <= VIZ_MAX_POINTS else np.sort(
@@ -294,6 +295,23 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
             "late_deliveries_share": float((planned[m] - on_time[m]).sum() / max(1.0, (planned[pool] - on_time[pool]).sum())),
         })
 
+    # backtest: simulate from the first 80 % of the days, compare with the last 20 %.
+    # Each historical day is scaled to the fleet of the data; only comparable at that fleet size.
+    if fleet == vehicles_in_data:
+        per = vehicles_in_data
+        day_stat = lambda v: np.array([float(v[ix].sum()) * per / ix.size for ix in by_day])
+        bt = backtest.run(sim["day"], [str(d) for d in days if (pool & (dates == d)).any()], [
+            {"key": "on_time_share", "label": "On-time share of the day", "fmt": "pct", "unit": None, "sim": share_on_time,
+             "observed": np.array([on_time[ix].sum() / planned[ix].sum() if planned[ix].sum() else np.nan for ix in by_day])},
+            {"key": "breakdowns", "label": "Breakdowns per day", "fmt": "num", "unit": None,
+             "sim": sim["breakdowns"], "observed": day_stat(breakdown.astype(float))},
+            {"key": "fuel_l", "label": "Fuel per day", "fmt": "int", "unit": "L", "sim": sim["fuel_l"], "observed": day_stat(fuel)},
+            {"key": "maint_cost", "label": "Maintenance cost per day", "fmt": "int", "unit": "€",
+             "sim": sim["maint_cost"], "observed": day_stat(maint)}], "days")
+    else:
+        bt = backtest.unavailable(f"this is a what-if with a fleet of {fleet}; the data has {vehicles_in_data} vehicles, "
+                                  "so its days are not comparable")
+
     kpi = {
         "fleet_size": fleet,
         "p_meet_sla": float(meets.mean()), "p_miss_sla": float(1 - meets.mean()),
@@ -331,7 +349,7 @@ def run(section: FleetInput, ctx: RunContext) -> dict:
             "anomalies": {"threshold": s.exclude_anomalies_above, "excluded": int(excluded.sum()),
                           "kept_events": flagged_events,
                           "record_ids": [s.record_id[i] for i in np.flatnonzero(excluded)[:50]] if s.record_id else []},
-            "convergence": convergence,
+            "convergence": convergence, "backtest": bt,
             "inputs": observed_inputs(dates, planned, breakdown, arr(s.driver_available) > 0, fuel,
                                       arr(s.distance_km), duration, arr(s.fuel_price_eur_l), maint,
                                       len(set(s.vehicle_id))),

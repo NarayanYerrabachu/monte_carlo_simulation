@@ -170,3 +170,18 @@ def test_mapper_graph_for_the_viewer():
     assert g["edges"] == [[0, 7]]                            # edge to an unknown node dropped
     assert len(snap["frames"]) >= 1 and snap["frames"][-1]["n"] == 100
     assert sum(c for _, c in snap["frames"][-1]["nodes"]) == 20   # 20 vehicles, one node each
+
+
+def test_backtest_compares_the_last_days_with_a_simulation_from_the_first():
+    bt = _run(_records(n_days=30, p_break=0.05), n_sims=2000)["summary"]["backtest"]
+    assert bt["available"] and bt["unit"] == "days" and (bt["train_periods"], bt["test_periods"]) == (24, 6)
+    assert {r["key"] for r in bt["metrics"]} == {"on_time_share", "breakdowns", "fuel_l", "maint_cost"}
+    assert bt["verdict"] == "holds"
+    slow = _run(_records(n_days=30, slow_day=28), n_sims=2000)["summary"]["backtest"]     # a late day only in the hold-out
+    on_time = next(r for r in slow["metrics"] if r["key"] == "on_time_share")
+    assert on_time["coverage"] < 1.0 and on_time["observed_min"] < on_time["sim_lo"]
+
+
+def test_backtest_is_skipped_for_a_fleet_size_what_if():
+    bt = _run(_records(n_days=30), fleet_size=35)["summary"]["backtest"]
+    assert bt["available"] is False and "what-if" in bt["reason"]
