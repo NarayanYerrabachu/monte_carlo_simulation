@@ -184,3 +184,6 @@ th { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: upp
 
 /* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
 [hidden] { display: none !important; }
+
+/* brand mark (frontend/img/montecarlo-mark.svg) */
+.logo { display: block; flex: none; }

@@ -55,6 +55,7 @@ app.include_router(jobs_api.router)
 app.include_router(reports_api.router)
 app.mount("/js", NoCacheStatic(directory=FRONTEND_DIR / "js"), name="js")
 app.mount("/css", NoCacheStatic(directory=FRONTEND_DIR / "css"), name="css")
+app.mount("/img", StaticFiles(directory=FRONTEND_DIR / "img"), name="img")      # logo, favicon
 
 
 @app.get("/", include_in_schema=False)

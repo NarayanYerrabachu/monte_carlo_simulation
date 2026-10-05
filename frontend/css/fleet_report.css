@@ -162,3 +162,6 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em; 
 
 /* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
 [hidden] { display: none !important; }
+
+/* brand mark (frontend/img/montecarlo-mark.svg) */
+.logo { display: block; flex: none; }

@@ -370,3 +370,13 @@ def test_finished_jobs_survive_a_restart(tmp_path):
     expired = JobStore(workers=1, n_jobs=1, ttl_s=0.001, job_dir=str(tmp_path))
     assert expired.get(job.id) is None and not (tmp_path / f"{job.id}.json.gz").exists()
     expired.shutdown()
+
+
+def test_logo_is_served_and_used_on_every_page(client):
+    r = client.get("/img/montecarlo-mark.svg")
+    assert r.status_code == 200 and "svg" in r.headers["content-type"] and "<svg" in r.text
+    assert client.get("/img/montecarlo-logo-dark.svg").status_code == 200
+    assert client.get("/img/montecarlo-logo-light.svg").status_code == 200
+    for page in ("/", "/fleet", "/report"):
+        html = client.get(page).text
+        assert html.count("/img/montecarlo-mark.svg") == 2, page        # browser icon and header mark

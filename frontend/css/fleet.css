@@ -142,3 +142,6 @@ ul.plain { margin: 4px 0 8px; padding-left: 18px; color: var(--muted); }
 
 /* the hidden attribute always wins over display rules (e.g. #result { display: flex }) */
 [hidden] { display: none !important; }
+
+/* brand mark (frontend/img/montecarlo-mark.svg) */
+.logo { display: block; flex: none; }

@@ -1,5 +1,7 @@
 # Monte Carlo Simulation Service (CortXplorer TDA)
 
+<img src="frontend/img/montecarlo-logo-light.svg" alt="Monte Carlo — simulated outcomes" width="330">
+
 A FastAPI service (port **8020**) that attaches **significance** and **stability** to the findings of the
 [CortXplorer TDA demo](../CorteXplorer_tda_demo). The demo sends its TDA and statistical data in an HTTP
 request. The service runs Monte Carlo simulations as an asynchronous job and returns the results.
