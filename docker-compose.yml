@@ -6,7 +6,7 @@ services:
       context: .
       dockerfile: Dockerfile
     image: yerran/monte-carlo-service:latest
-    platform: linux/amd64
+    # Published for amd64 and arm64; Docker picks the host's own (no emulation on Apple Silicon).
     container_name: monte-carlo-service
     restart: unless-stopped
     ports:

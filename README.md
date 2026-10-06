@@ -51,6 +51,11 @@ Tests:
 
 ```bash
 docker compose up -d --build        # → http://localhost:8020/health, API docs at /docs
+```
+Publishing the image for both Intel and Apple Silicon hosts (an image built for one platform only
+runs under emulation on the other, several times slower):
+```bash
+git archive HEAD | docker buildx build --platform linux/amd64,linux/arm64 -t yerran/monte-carlo-service:latest --push -
 docker compose logs -f monte-carlo
 docker compose down
 ```
