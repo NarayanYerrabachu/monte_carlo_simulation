@@ -24,4 +24,9 @@ USER mc
 EXPOSE 8020
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8020/health', timeout=3).status == 200 else 1)"
+# Numerical libraries (OpenMP, OpenBLAS) otherwise start one thread per visible core and
+# oversubscribe the container: on a 16-core host, training one model took 9.5 s instead of 0.2 s.
+# Four threads keep the parallel steps fast without the contention.
+ENV OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4
+
 CMD ["python3", "-m", "uvicorn", "mc_service.main:app", "--host", "0.0.0.0", "--port", "8020"]
