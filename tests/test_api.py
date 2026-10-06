@@ -309,7 +309,9 @@ def test_fleet_report_carries_the_mapper_graph(client):
     from openpyxl import load_workbook
     wb = load_workbook(io.BytesIO(xlsx))
     assert wb.sheetnames[0] == "Report" and "TDA Mapper groups" in wb.sheetnames
-    assert len(wb["TDA Galaxy & Mapper"]._images) == 2                  # Galaxy view and Mapper view
+    assert len(wb["TDA Galaxy & Mapper"]._images) == 3                  # logo, Galaxy view and Mapper view
+    assert all(len(ws._images) >= 1 and ws.row_dimensions[1].height == 36 for ws in wb.worksheets)   # logo on every sheet
+    assert wb["TDA Galaxy & Mapper"]["A3"].value.startswith("TDA Galaxy")   # content moved down under the logo
     assert base64.b64decode(data(client.post("/v1/reports/job", json={"job_id": job_id, "format": "pdf"}))["content"]).startswith(b"%PDF")
 
 

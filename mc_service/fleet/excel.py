@@ -10,6 +10,7 @@ from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from mc_service.branding import brand_workbook
 from mc_service.fleet.model import LIMITATIONS, NEXT_STEPS, FleetReport
 
 HEAD_FILL = PatternFill("solid", fgColor="1C5CAB")
@@ -208,5 +209,6 @@ def build_xlsx(report: FleetReport) -> bytes:
     ws.auto_filter.ref = ws.dimensions
 
     buf = io.BytesIO()
+    brand_workbook(wb, "Monte Carlo Simulation in Fleet Management")
     wb.save(buf)
     return buf.getvalue()

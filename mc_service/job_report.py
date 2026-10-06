@@ -37,6 +37,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from mc_service.branding import brand_page, brand_workbook
 from mc_service.fleet import (
     charts as fleet_charts,
 )
@@ -1144,7 +1145,7 @@ def build_pdf(result: dict[str, Any], graph: dict | None = None) -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2 * cm, rightMargin=2 * cm, topMargin=1.8 * cm,
                             bottomMargin=2 * cm, title="Monte Carlo report", author="CortXplorer Monte Carlo Service")
     footer = _scenario_footer if what == "scenario" else _footer
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+    doc.build(story, onFirstPage=brand_page(footer), onLaterPages=brand_page(footer))
     return buf.getvalue()
 
 
@@ -1154,6 +1155,7 @@ def build_xlsx(result: dict[str, Any], graph: dict | None = None) -> bytes:
     wb = Workbook()
     what = kind(result)
     {"fleet": _fleet_xlsx, "scenario": _scenario_xlsx, "loops": _loops_xlsx}[what](result[what], job, wb)
+    brand_workbook(wb, f"Monte Carlo report · {result['dataset_id']}")
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

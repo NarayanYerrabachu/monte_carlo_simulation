@@ -92,9 +92,10 @@ def test_excel_as_json(client):
     assert "spreadsheetml" in f["content_type"]
     wb = load_workbook(io.BytesIO(content))
     assert wb.sheetnames == ["Summary", "Inputs", "Distributions", "Drivers", "Fleet sizing", "Convergence", "Scenarios"]
-    assert wb["Scenarios"].max_row == N + 1
+    assert wb["Scenarios"].max_row == N + 1 + 2                     # two logo rows on top
     k = build_report(N, 1).data["kpi"]
-    assert wb["Summary"]["B5"].value == pytest.approx(k["p_day_on_time"])
+    assert wb["Summary"]["B7"].value == pytest.approx(k["p_day_on_time"])
+    assert all(ws._images for ws in wb.worksheets)                   # logo on every sheet
     assert wb["Drivers"]._charts and wb["Fleet sizing"]._charts
 
 
