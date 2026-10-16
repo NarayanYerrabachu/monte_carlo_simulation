@@ -72,10 +72,11 @@ def fleet_page():
 
 @app.get("/report", include_in_schema=False)
 def report_page(job: str | None = None):
-    """``/report?job=<id>``: report of that job (HTML + PDF + Excel); without a job, the report
-    of the newest finished job, fleet or scenario (the page picks it). A static page that
-    renders API JSON."""
-    return FileResponse(FRONTEND_DIR / "fleet.html", headers={"Cache-Control": "no-cache"})
+    """``/report?job=<id>``: the assumption-style report of that job (key results, observed and
+    assumed inputs, distributions, regimes, drivers, what-if, recommendations; PDF and Excel
+    say the same); without a job, the newest finished one. Fleet jobs are sent on to their
+    dashboard (/fleet). A static page that renders API JSON."""
+    return FileResponse(FRONTEND_DIR / "report.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/fleet-demo", include_in_schema=False)

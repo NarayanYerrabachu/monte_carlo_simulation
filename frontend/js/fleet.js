@@ -603,6 +603,8 @@ function selectJob(jobId) {
   $("whatif").hidden = true;
   setDownloads(false);
   $("nav-live").href = jobId ? `/?job=${encodeURIComponent(jobId)}` : "/";
+  const navReport = $("nav-report");
+  if (navReport) navReport.href = jobId ? `/report?job=${encodeURIComponent(jobId)}` : "/report";
   const url = new URL(location.href);
   if (jobId) url.searchParams.set("job", jobId); else url.searchParams.delete("job");
   history.replaceState(null, "", url);

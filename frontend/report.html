@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monte Carlo Report</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="icon" type="image/svg+xml" href="/img/montecarlo-mark.svg">
+<link rel="stylesheet" href="/css/fleet_report.css">
+<style>
+  .whatif { display: grid; gap: 12px; }
+  .whatif .controls { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
+  .whatif .field { display: grid; gap: 4px; font-size: 12px; color: var(--ink-2); }
+  .whatif input[type=number] { width: 9em; }
+  .whatif table input { width: 7.5em; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 12px; }
+  .whatif .check { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--ink-2); }
+  .jobbar { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--ink-2); }
+  .jobbar select { max-width: 24em; }
+  .verdict { font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="toolbar">
+    <img class="logo" src="/img/montecarlo-mark.svg" alt="" width="26" height="26">
+    <a class="btn" href="/" id="nav-live">← Live viewer</a>
+    <a class="btn" href="/fleet" id="nav-dash">Dashboard</a>
+    <a class="btn" href="/fleet-demo">Fleet demo (assumed inputs)</a>
+    <span class="spacer"></span>
+    <span class="jobbar"><label for="job-select">Job</label><select id="job-select"></select></span>
+    <button id="dl-pdf" class="btn" type="button" disabled>Download PDF</button>
+    <button id="dl-xlsx" class="btn" type="button" disabled>Download Excel</button>
+  </div>
+  <div id="error" class="error" hidden></div>
+  <div id="status" class="status" hidden></div>
+  <div id="empty" class="status" hidden>No finished simulation yet. In CortXplorer, load any table and press <b>Monte Carlo ↗</b>; when the run is done, its report opens here.</div>
+
+  <div id="report" hidden>
+  <header class="hero">
+    <span class="eyebrow" id="h-eyebrow"></span>
+    <h1 id="h-title"></h1>
+    <p class="lede" id="h-lede"></p>
+    <div class="meta">
+      <span><b id="m-n"></b> <span id="m-unit">simulated periods</span></span>
+      <span>Seed <b id="m-seed"></b> (reproducible)</span>
+      <span>Generated <b id="m-date"></b></span>
+      <span id="m-inputs"></span>
+    </div>
+  </header>
+
+  <section aria-labelledby="h-summary">
+    <div class="section-head">
+      <span class="eyebrow">Summary</span>
+      <h2 id="h-summary">Key results</h2>
+      <p id="summary-text"></p>
+    </div>
+    <div class="findings" id="findings"></div>
+  </section>
+
+  <section aria-labelledby="h-model">
+    <div class="section-head">
+      <span class="eyebrow">Model</span>
+      <h2 id="h-model">Uncertain inputs</h2>
+      <p id="inputs-text">Every input is drawn from the real records in each scenario; nothing is fitted. <span class="tag given">Data</span> values are the dataset's own range. <span class="tag assumed">Assumed</span> values were set in the what-if box: a range keeps only the records inside it, a shift is added to every record.</p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Input (per record)</th><th>Observed range (P5 – P95)</th><th>Assumed</th><th>Alert per period</th><th>Source</th></tr></thead>
+        <tbody id="inputs"></tbody>
+      </table>
+    </div>
+    <div class="section-head">
+      <h3 id="h-steps">How one period is calculated</h3>
+      <ol class="steps" id="steps"></ol>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-outcomes">
+    <div class="section-head">
+      <span class="eyebrow">Result 1</span>
+      <h2 id="h-outcomes">What a period looks like</h2>
+      <p id="outcomes-text"></p>
+    </div>
+    <div class="charts" id="charts"></div>
+  </section>
+
+  <section aria-labelledby="h-regimes">
+    <div class="section-head">
+      <span class="eyebrow">Result 2</span>
+      <h2 id="h-regimes">Where the risk comes from — TDA regimes</h2>
+      <p id="regimes-text"></p>
+    </div>
+    <div class="table-wrap"><table id="regimes"></table></div>
+  </section>
+
+  <section aria-labelledby="h-drivers" id="drivers-section">
+    <div class="section-head">
+      <span class="eyebrow">Result 3</span>
+      <h2 id="h-drivers">What drives the risk</h2>
+      <p id="drivers-text"></p>
+    </div>
+    <div class="charts">
+      <div class="chart-card">
+        <h3 id="drivers-title">Drivers of alerts</h3>
+        <div class="chart" id="c-drivers"></div>
+      </div>
+    </div>
+    <div class="legend"><span><i style="background:var(--s2)"></i>higher input, more risk</span><span><i style="background:var(--s1)"></i>higher input, less risk</span></div>
+  </section>
+
+  <section aria-labelledby="h-whatif">
+    <div class="section-head">
+      <span class="eyebrow">What-if</span>
+      <h2 id="h-whatif">Re-run with other assumptions</h2>
+      <p>Same records and TDA / ML results; only the assumptions change. Leave a field empty to use the data as it is. Each run is kept as its own job and opens here when it is done.</p>
+    </div>
+    <div class="whatif">
+      <div class="controls">
+        <label class="field"><span id="lbl-period">Records per period</span><input id="in-period" type="number" min="1" max="100000" step="1"></label>
+        <label class="field"><span>Scenarios</span><input id="in-sims" type="number" min="1000" max="100000" step="1000"></label>
+        <label class="check"><input id="in-clean" type="checkbox"> <span>Exclude records the ML model flags as anomalies (score ≥ 0.6)</span></label>
+        <button id="rerun" class="btn primary" type="button">Re-run simulation</button>
+      </div>
+      <div class="table-wrap">
+        <table id="assume-table">
+          <thead><tr><th>Input (per record)</th><th>Observed P5 – P95</th><th>Assumed low</th><th>Assumed high</th><th>Shift (added)</th><th>Alert per period</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="status" id="rerun-status" hidden></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-conv">
+    <div class="section-head">
+      <span class="eyebrow">Quality</span>
+      <h2 id="h-conv">Are the scenarios enough?</h2>
+      <p id="conv-text"></p>
+      <p id="backtest-text"></p>
+    </div>
+    <div class="chart-card wide">
+      <h3>Estimate as the number of scenarios grows</h3>
+      <div class="legend"><span><i class="line" style="background:var(--s1)"></i><span id="conv-label">estimate</span></span><span><i style="background:color-mix(in srgb, var(--s1) 22%, transparent)"></i>95% confidence interval</span></div>
+      <div class="chart" id="c-conv"></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="h-recs">
+    <div class="section-head">
+      <span class="eyebrow">Decisions</span>
+      <h2 id="h-recs">Recommendations</h2>
+      <p>Computed from the numbers above; the strongest effect first.</p>
+    </div>
+    <div class="recs" id="recs"></div>
+  </section>
+
+  <section aria-labelledby="h-limits">
+    <div class="section-head">
+      <span class="eyebrow">Context</span>
+      <h2 id="h-limits">Limitations and next steps</h2>
+    </div>
+    <div class="limits">
+      <div><h3>Model limitations</h3><ul id="limitations"></ul></div>
+      <div><h3>Next steps</h3><ul id="next-steps"></ul></div>
+    </div>
+  </section>
+
+  <footer>
+    <span>Generated by the Monte Carlo service from the records CortXplorer sent, with their TDA regimes and ML anomaly scores. This page, the PDF and the Excel file come from the same run, so every number matches.</span>
+    <span>Monte Carlo method: each scenario resamples real records into one period. Probabilities are shares of scenarios; percentiles refer to the distribution across all scenarios.</span>
+  </footer>
+  </div>
+</div>
+<script src="/js/report_charts.js"></script>
+<script src="/js/report.js"></script>
+</body>
+</html>

@@ -106,11 +106,14 @@ def test_fleet_demo_page_and_viewer_link(client):
     assert 'href="/fleet-demo"' in client.get("/").text
 
 
-def test_report_page_is_the_job_report_with_or_without_a_job(client):
+def test_report_page_is_the_assumption_report_of_a_job_with_or_without_a_job(client):
     for url in ("/report?job=abc", "/report"):
         page = client.get(url)
-        assert page.status_code == 200 and "/js/fleet.js" in page.text and 'id="dl-pdf"' in page.text, url
-        assert "fleet_report.js" not in page.text                           # never the assumption demo
+        assert page.status_code == 200 and "/js/report.js" in page.text and "/js/report_charts.js" in page.text, url
+        for section in ("Key results", "Uncertain inputs", "What drives the risk", "Re-run with other assumptions", "Recommendations"):
+            assert section in page.text, section
+        assert 'id="dl-pdf"' in page.text and "fleet_report.js" not in page.text   # never the fixed-input demo
+    assert 'href="/report"' in client.get("/fleet").text and 'href="/report"' in client.get("/").text
 
 
 def test_fleet_dashboard_served(client):
@@ -123,6 +126,7 @@ def test_fleet_dashboard_served(client):
 def test_frontend_assets_served(client):
     page = client.get("/fleet-demo").text
     assert "/js/fleet_report.js" in page and "/css/fleet_report.css" in page
-    for path in ("/js/fleet_report.js", "/css/fleet_report.css", "/js/viewer.js", "/css/viewer.css"):
+    assert "/js/report_charts.js" in page                                   # shared chart helpers, loaded first
+    for path in ("/js/fleet_report.js", "/js/report_charts.js", "/js/report.js", "/css/fleet_report.css", "/js/viewer.js", "/css/viewer.css"):
         r = client.get(path)
         assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
