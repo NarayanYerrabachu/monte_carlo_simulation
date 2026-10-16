@@ -379,6 +379,6 @@ def test_logo_is_served_and_used_on_every_page(client):
     assert r.status_code == 200 and "svg" in r.headers["content-type"] and "<svg" in r.text
     assert client.get("/img/montecarlo-logo-dark.svg").status_code == 200
     assert client.get("/img/montecarlo-logo-light.svg").status_code == 200
-    for page in ("/", "/fleet", "/report"):
+    for page in ("/", "/fleet", "/report", "/fleet-demo"):
         html = client.get(page).text
         assert html.count("/img/montecarlo-mark.svg") == 2, page        # browser icon and header mark

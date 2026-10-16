@@ -99,16 +99,18 @@ def test_excel_as_json(client):
     assert wb["Drivers"]._charts and wb["Fleet sizing"]._charts
 
 
-def test_report_page_and_viewer_link(client):
-    page = client.get("/report")
+def test_fleet_demo_page_and_viewer_link(client):
+    page = client.get("/fleet-demo")
     assert page.status_code == 200 and "Download PDF" in page.text and "Download Excel" in page.text
-    assert 'href="/report"' in client.get("/").text
+    assert "fleet_report.js" in page.text and "assumed inputs" in page.text
+    assert 'href="/fleet-demo"' in client.get("/").text
 
 
-def test_report_page_for_a_job(client):
-    page = client.get("/report?job=abc")
-    assert page.status_code == 200 and "/js/fleet.js" in page.text and 'id="dl-pdf"' in page.text
-    assert "fleet_report.js" in client.get("/report").text                  # no job: assumption report
+def test_report_page_is_the_job_report_with_or_without_a_job(client):
+    for url in ("/report?job=abc", "/report"):
+        page = client.get(url)
+        assert page.status_code == 200 and "/js/fleet.js" in page.text and 'id="dl-pdf"' in page.text, url
+        assert "fleet_report.js" not in page.text                           # never the assumption demo
 
 
 def test_fleet_dashboard_served(client):
@@ -119,7 +121,7 @@ def test_fleet_dashboard_served(client):
 
 
 def test_frontend_assets_served(client):
-    page = client.get("/report").text
+    page = client.get("/fleet-demo").text
     assert "/js/fleet_report.js" in page and "/css/fleet_report.css" in page
     for path in ("/js/fleet_report.js", "/css/fleet_report.css", "/js/viewer.js", "/css/viewer.css"):
         r = client.get(path)

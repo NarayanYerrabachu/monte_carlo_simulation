@@ -102,7 +102,7 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/?job=<id>` | **Live viewer** (fleet and scenario jobs): CortXplorer's Monte Carlo ↗ lands here, and the simulated days / periods play out as a live dashboard |
 | `GET` | `/report?job=<id>` | **Job report**: HTML view of a finished job, with Download PDF / Excel and what-if re-runs (`/fleet?job=` is the same page) |
 | `POST` | `/v1/reports/job` | `{"job_id": "…", "format": "json" \| "pdf" \| "xlsx"}`: the "Monte Carlo with TDA" report of a finished job (result, TDA regimes and the TDA Mapper graph it was sent); files come back as base64 in the JSON |
-| `GET` | `/report` | Assumption-based fleet report (no job), with PDF and Excel download buttons |
+| `GET` | `/report` | Job report of the newest finished job (fleet or scenario); `/fleet-demo` is the assumption-based fleet demo with fixed inputs, PDF and Excel |
 | `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
 | `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
 | `POST` | `/v1/reports/fleet/xlsx` | Same body. Returns the report as Excel, inside the JSON (base64): summary, inputs, distributions, drivers, fleet sizing, convergence, all scenarios |
@@ -181,7 +181,7 @@ assumptions. The report covers:
 - a what-if for fleet size vs. driver pool
 - convergence of the estimate, and recommendations
 
-Open **Report** in the live viewer (or go to http://localhost:8020/report). Set the number of
+Open **Fleet demo** in the live viewer (or go to http://localhost:8020/fleet-demo). Set the number of
 scenarios and the seed, click **Run report**, then **Download PDF** or **Download Excel**. The page
 decodes the base64 file from the JSON response into a download. All three
 formats come from the same cached run (`build_report(n, seed)`), so their numbers and texts are

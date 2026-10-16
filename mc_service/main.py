@@ -72,10 +72,17 @@ def fleet_page():
 
 @app.get("/report", include_in_schema=False)
 def report_page(job: str | None = None):
-    """``/report?job=<id>``: report of that job (HTML + PDF + Excel). Without a job: the
-    assumption-based fleet report. Both are static pages that render API JSON."""
-    page = "fleet.html" if job else "fleet_report.html"
-    return FileResponse(FRONTEND_DIR / page, headers={"Cache-Control": "no-cache"})
+    """``/report?job=<id>``: report of that job (HTML + PDF + Excel); without a job, the report
+    of the newest finished job, fleet or scenario (the page picks it). A static page that
+    renders API JSON."""
+    return FileResponse(FRONTEND_DIR / "fleet.html", headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/fleet-demo", include_in_schema=False)
+def fleet_demo_page():
+    """The assumption-based fleet demo: a fixed fleet brief, no uploaded data. Kept as a
+    worked example of the fleet model; the data-driven reports are under /report."""
+    return FileResponse(FRONTEND_DIR / "fleet_report.html", headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/health")
