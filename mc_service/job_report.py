@@ -859,6 +859,13 @@ def _scenario_blocks(sc: dict) -> dict:
                        [f"{num(c['n_pool'])} of {num(c['n_records'])} records · {num(c['period_size'])} {records} per {period}", how])}
 
 
+def _fleet_data(job: dict) -> bool:
+    """Whether the job ran on fleet data. "What drives the risk" correlates each input with the alerts breached
+    per day, an operations question; on other data (stock prices) the same figure reads as a trading signal,
+    which it is not, so the drivers section is a fleet-only part of the report."""
+    return "fleet" in (job.get("tests") or [])
+
+
 def _scenario_charts(sc: dict) -> dict[str, Any]:
     s, k = sc["summary"], sc["summary"]["kpi"]
     charts = s["dashboard"]["charts"]
@@ -961,7 +968,7 @@ def _scenario_story(sc: dict, job: dict) -> list:
     if png["dists"]:
         story += [KeepTogether(_section("Charts", "Distributions") + [_img(png["dists"][0])])]
         story += [_img(p) for p in png["dists"][1:]]
-    if "drivers" in png:
+    if "drivers" in png and _fleet_data(job):                 # a fleet-operations question; see _fleet_data
         story += [KeepTogether(_section("Drivers", "What drives the risk", text.get("drivers")) + [_img(png["drivers"])])]
 
     shown = s["metrics"][:2]
@@ -1095,7 +1102,7 @@ def _scenario_xlsx(sc: dict, job: dict, wb: Workbook) -> None:
             ws.cell(row=i, column=2, value=r["title"])
             ws.cell(row=i, column=3, value=r["text"])
         _widths(ws, [4, 48, 120])
-    if s.get("sensitivity"):
+    if s.get("sensitivity") and _fleet_data(job):
         ws = wb.create_sheet("Drivers")
         _head(ws, 1, ["Input", "Correlation with alerts per period", "Correlation with high-risk records"])
         for i, d in enumerate(s["sensitivity"], 2):

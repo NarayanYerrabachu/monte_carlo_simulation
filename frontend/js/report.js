@@ -150,7 +150,10 @@ function render(sc, job) {
   $("regimes-text").textContent = `Each regime is a cluster TDA found in the ${records}. The simulation samples from all of them; the table shows how each behaves`
     + (tails.length ? `, and how over-represented it is in the ${unit} where a metric is in its top 5% (×1 = as often as usual). A regime far above ×1 is a leading indicator.` : ".");
 
-  const drivers = (s.sensitivity || []).filter((d) => d.alerts != null || d.high != null);
+  // "What drives the risk" is a fleet-operations question (alerts breached per day); for other
+  // datasets the same correlation reads as a trading signal, which it is not, so it stays hidden.
+  const fleetData = ((job && job.tests) || []).includes("fleet");
+  const drivers = fleetData ? (s.sensitivity || []).filter((d) => d.alerts != null || d.high != null) : [];
   $("drivers-section").hidden = !drivers.length;
   if (drivers.length) {
     const withAlerts = drivers.some((d) => d.alerts != null);
