@@ -150,15 +150,13 @@ function render(sc, job) {
   $("regimes-text").textContent = `Each regime is a cluster TDA found in the ${records}. The simulation samples from all of them; the table shows how each behaves`
     + (tails.length ? `, and how over-represented it is in the ${unit} where a metric is in its top 5% (×1 = as often as usual). A regime far above ×1 is a leading indicator.` : ".");
 
-  // "What drives the risk" is a fleet-operations question (alerts breached per day); for other
-  // datasets the same correlation reads as a trading signal, which it is not, so it stays hidden.
-  const fleetData = ((job && job.tests) || []).includes("fleet");
-  const drivers = fleetData ? (s.sensitivity || []).filter((d) => d.alerts != null || d.high != null) : [];
+  const drivers = (s.sensitivity || []).filter((d) => d.alerts != null || d.high != null);
   $("drivers-section").hidden = !drivers.length;
   if (drivers.length) {
     const withAlerts = drivers.some((d) => d.alerts != null);
+    $("h-drivers").textContent = `What drives the risk in ${title}`;
     $("drivers-title").textContent = withAlerts ? `Drivers of alerts per ${period}` : `Drivers of high-risk ${records} per ${period}`;
-    $("drivers-text").textContent = `Correlation of each input's value in a ${period} with ${withAlerts ? "the number of alerts breached" : "the number of high-risk records"} in that ${period}, over all scenarios. Values near 0 mean the input hardly moves the risk. ` + ((s.text || {}).drivers || "");
+    $("drivers-text").textContent = `Correlation of each input's value in a ${period} with ${withAlerts ? "the number of alerts" : `the number of high-risk ${records}`} in that ${period}, over all scenarios. Values near 0 mean the input hardly moves the risk; a negative value means a higher input goes with fewer ${withAlerts ? "alerts" : `high-risk ${records}`}. ` + ((s.text || {}).drivers || "");
     diverging("c-drivers", drivers.map((d) => ({ name: d.label, value: d.alerts != null ? d.alerts : d.high })).sort((a, b) => Math.abs(b.value) - Math.abs(a.value)),
       "Correlation of inputs with the risk per period");
   }

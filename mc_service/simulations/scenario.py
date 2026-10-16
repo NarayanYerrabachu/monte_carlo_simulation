@@ -453,7 +453,11 @@ def _narrative(s: ScenarioInput, metrics: list[dict], k: dict, regimes: list[dic
                        + (f" ({a['records_removed']:,} {records} outside)" if a["records_removed"] else "")
                        for a in applied) + "." if applied else "")),
         "results": " ".join(f"{f['label']}: {f['value']} ({f['sub']})." for f in findings),
-        "drivers": ((f"{drivers[0]['label']} moves most with the risk (correlation "
+        "drivers": (((f"An alert is a {s.period_label} in which an input ends above its alert level: the level in the "
+                      f"what-if table, the 90th percentile of its own history unless one was set. "
+                      if any(d.get("alerts") is not None for d in drivers) else
+                      f"A high-risk {records} is one the TDA / ML scoring flags as unusual. ") if drivers else "")
+                    + (f"{drivers[0]['label']} moves most with the risk (correlation "
                      f"{(drivers[0].get('alerts') if drivers[0].get('alerts') is not None else drivers[0].get('high')):+.2f}); "
                      + ("; ".join(f"{d['label']} {(d.get('alerts') if d.get('alerts') is not None else d.get('high')):+.2f}" for d in drivers[1:3])
                         + "." if len(drivers) > 1 else "")) if drivers else "No alert thresholds and no anomaly scores: nothing to correlate the inputs with.")
