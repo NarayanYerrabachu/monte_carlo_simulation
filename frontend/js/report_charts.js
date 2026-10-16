@@ -55,7 +55,7 @@ function tooltip(container) {
 function histogram(id, h, opt) {
   const box = $(id);
   box.replaceChildren();
-  const W = 420, H = 230, m = { l: 44, r: 12, t: 36, b: 42 };
+  const W = 420, H = 240, m = { l: 44, r: 12, t: 46, b: 42 };
   const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": opt.aria }, box);
   const total = h.counts.reduce((a, b) => a + b, 0);
   const share = h.counts.map((c) => c / total);
@@ -88,13 +88,15 @@ function histogram(id, h, opt) {
     hit.addEventListener("mouseleave", () => { bar.removeAttribute("opacity"); tip.hide(); });
   });
 
-  // reference lines, labels staggered so they never collide
-  (opt.markers || []).forEach((mk, i) => {
+  // reference lines; labels go on up to three rows, sorted by x, so close markers never collide
+  const shown = (opt.markers || []).filter((mk) => isFinite(mk.x) && X(mk.x) >= m.l && X(mk.x) <= W - m.r)
+    .sort((a, b) => a.x - b.x);
+  shown.forEach((mk, i) => {
     const x = X(mk.x);
-    if (x < m.l || x > W - m.r) return;
     el("line", { x1: x, x2: x, y1: m.t - 4, y2: H - m.b, stroke: "var(--ink)", "stroke-width": 1.5, "stroke-dasharray": mk.dash ? "4 3" : "" }, svg);
     const anchor = x > W * 0.75 ? "end" : x < W * 0.25 ? "start" : "middle";
-    el("text", { x: x + (anchor === "end" ? -4 : anchor === "start" ? 4 : 0), y: m.t - 8 - (i % 2) * 14, "text-anchor": anchor, class: "mark-label" }, svg).textContent = mk.label;
+    const row = shown.length > 1 ? i % 3 : 0;
+    el("text", { x: x + (anchor === "end" ? -4 : anchor === "start" ? 4 : 0), y: m.t - 8 - row * 12, "text-anchor": anchor, class: "mark-label" }, svg).textContent = mk.label;
   });
 }
 
