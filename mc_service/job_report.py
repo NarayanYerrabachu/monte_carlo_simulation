@@ -923,6 +923,28 @@ def _scenario_story(sc: dict, job: dict) -> list:
     if s.get("findings"):
         story += [KeepTogether(_section("Summary", "Key results", text.get("results"))
                                + [Paragraph(f"<b>{f['value']}</b> — {f['label']} ({f['sub']})", S["body"]) for f in s["findings"]])]
+    pred = s.get("predictions") or {}
+    if pred.get("rows"):
+        prow = [_th(["Metric", f"Expected next {pred['horizon']}", "Likely range (90%)", "Alert", f"P(breach) next {pred['horizon']}",
+                     "P(≥1 in 20)", f"Recent {unit}", "Outlook"])]
+        for r in pred["rows"]:
+            prow.append([Paragraph(r["label"], S["cell"]), _fv(r["expected"], r["fmt"], r.get("unit")),
+                         f"{_fv(r['low'], r['fmt'], r.get('unit'))} – {_fv(r['high'], r['fmt'], r.get('unit'))}",
+                         _fv(r["alert"], r["fmt"], r.get("unit")) if r.get("alert") is not None else "–",
+                         pct(r["p_over"]) if r.get("p_over") is not None else "–", pct(r["p_over_20"]) if r.get("p_over_20") is not None else "–",
+                         Paragraph((r["drift"] or "–") if r.get("drift") else "–", S["cell"]), Paragraph(r["outlook"], S["cell"])])
+        if pred.get("high"):
+            h = pred["high"]
+            prow.append([Paragraph(f"High-risk {records}", S["cell"]), f"{h['expected']:.1f}" if h.get("expected") is not None else "–",
+                         f"0 – {num(h.get('p95'))}", "–", pct(h.get("p_any")), pct(h.get("p_any_5")) + " (in 5)", "–", Paragraph("count of records the anomaly model flags", S["cell"])])
+        tp = Table(prow, colWidths=[3.0 * cm, 2.0 * cm, 2.6 * cm, 1.6 * cm, 1.9 * cm, 1.7 * cm, 1.6 * cm, 2.6 * cm], repeatRows=1)
+        tp.setStyle(_table_style())
+        story += [KeepTogether(_section("Predictions", f"What to expect in the next {pred['horizon']}", pred.get("text")) + [tp]),
+                  Paragraph(pred.get("note", ""), S["small"])]
+    if s.get("recommendations"):
+        story += [KeepTogether(_section("Recommendations", "What to do with this")
+                               + [Paragraph(f"<b>{i}. {r['title']}.</b> {r['text']}", S["body"])
+                                  for i, r in enumerate(s["recommendations"], 1)])]
     assumed = (s.get("inputs") or {}).get("assumptions") or []
     rows = [_th(["Input (per record)", "Observed P5 – P95", "Assumed range", "Shift", "Records outside"])]
     for m in s["metrics"]:
@@ -974,10 +996,6 @@ def _scenario_story(sc: dict, job: dict) -> list:
                  f"{num(a['excluded'])} records with anomaly score ≥ {a['threshold']} left out of the sampling pool.")
     story += [KeepTogether(_section("Context", "TDA / ML findings and data quality")
                            + [Paragraph(n, S["body"]) for n in notes])]
-    if s.get("recommendations"):
-        story += [KeepTogether(_section("Recommendations", "What to do with this")
-                               + [Paragraph(f"<b>{i}. {r['title']}.</b> {r['text']}", S["body"])
-                                  for i, r in enumerate(s["recommendations"], 1)])]
     if "convergence" in png:
         story += [KeepTogether(_section("Quality", "Are the scenarios enough?", text.get("quality")) + [_img(png["convergence"])])]
     story += _backtest_story(s.get("backtest"))
@@ -1043,6 +1061,40 @@ def _scenario_xlsx(sc: dict, job: dict, wb: Workbook) -> None:
         ws.cell(row=i, column=8, value=a.get("records_removed"))
     _widths(ws, [34, 14, 16, 14, 13, 13, 10, 15])
 
+    pred = s.get("predictions") or {}
+    if pred.get("rows"):
+        ws = wb.create_sheet("Predictions")
+        ws["A1"] = f"What to expect in the next {pred['horizon']}"
+        ws["A1"].font = Font(bold=True, size=14)
+        ws["A2"] = pred.get("text")
+        ws["A3"] = pred.get("note")
+        _head(ws, 5, ["Metric", f"Expected next {pred['horizon']}", "Low (P5)", "High (P95)", "Alert", f"P(breach) next {pred['horizon']}",
+                      "P(≥1 breach in 5)", "P(≥1 breach in 20)", f"Recent {unit} (mean)", "Recent vs simulation", "Outlook"])
+        for i, r in enumerate(pred["rows"], 6):
+            ws.cell(row=i, column=1, value=r["label"])
+            for j, part in enumerate(("expected", "low", "high", "alert"), 2):
+                ws.cell(row=i, column=j, value=r.get(part)).number_format = xfmt(r["fmt"])
+            for j, part in enumerate(("p_over", "p_over_5", "p_over_20"), 6):
+                ws.cell(row=i, column=j, value=r.get(part)).number_format = "0.0%"
+            ws.cell(row=i, column=9, value=r.get("recent")).number_format = xfmt(r["fmt"])
+            ws.cell(row=i, column=10, value=r.get("drift"))
+            ws.cell(row=i, column=11, value=r.get("outlook"))
+        if pred.get("high"):
+            h, i = pred["high"], 6 + len(pred["rows"])
+            ws.cell(row=i, column=1, value=f"High-risk {c['record_label']}")
+            ws.cell(row=i, column=2, value=h.get("expected")).number_format = "0.0"
+            ws.cell(row=i, column=4, value=h.get("p95"))
+            ws.cell(row=i, column=6, value=h.get("p_any")).number_format = "0.0%"
+            ws.cell(row=i, column=7, value=h.get("p_any_5")).number_format = "0.0%"
+        _widths(ws, [30, 16, 12, 12, 12, 18, 16, 16, 16, 18, 36])
+    if s.get("recommendations"):
+        ws = wb.create_sheet("Recommendations")
+        _head(ws, 1, ["#", "Recommendation", "Why"])
+        for i, r in enumerate(s["recommendations"], 2):
+            ws.cell(row=i, column=1, value=i - 1)
+            ws.cell(row=i, column=2, value=r["title"])
+            ws.cell(row=i, column=3, value=r["text"])
+        _widths(ws, [4, 48, 120])
     if s.get("sensitivity"):
         ws = wb.create_sheet("Drivers")
         _head(ws, 1, ["Input", "Correlation with alerts per period", "Correlation with high-risk records"])

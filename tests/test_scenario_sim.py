@@ -151,6 +151,11 @@ def test_assumed_ranges_and_shifts_condition_the_simulation_and_are_reported():
     assert cond["summary"]["kpi"]["yield_pct_p5"] > 85.0                     # the bad week is gone
     assert cond["summary"]["kpi"]["cost_mean"] == pytest.approx(20 * (1000 + 250), rel=0.01)   # bad week gone, +250 per record, summed
     assert any("conditional" in r["title"].lower() for r in cond["summary"]["recommendations"])
+    pred = base["summary"]["predictions"]
+    assert pred["horizon"] == "period" and [r["key"] for r in pred["rows"]] == ["yield_pct", "deviation", "cost"]
+    yp = pred["rows"][0]
+    assert yp["low"] <= yp["expected"] <= yp["high"] and 0 <= yp["p_over"] <= 1 and yp["p_over_20"] >= yp["p_over"]
+    assert yp["outlook"] and yp["drift"] in ("above", "below", "in line") and pred["high"]["p_any"] >= 0 and pred["text"]
     assert "assumed" in cond["summary"]["text"]["inputs"].lower()
     with pytest.raises(ValueError):
         _run(rows, assumptions={"yield_pct": {"low": 1000.0}})

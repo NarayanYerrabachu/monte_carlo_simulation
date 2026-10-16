@@ -287,7 +287,15 @@ def test_scenario_job_end_to_end_with_reports_and_rerun(client):
     res3 = data(client.get(f"/v1/jobs/{cond['job_id']}/result"))["scenario"]
     assert res3["summary"]["inputs"]["assumptions"][0]["key"] == "yield_pct" and res3["summary"]["recommendations"]
     f = data(client.post("/v1/reports/job", json={"job_id": cond["job_id"], "format": "xlsx"}))
-    assert base64.b64decode(f["content"]).startswith(b"PK")
+    raw = base64.b64decode(f["content"])
+    assert raw.startswith(b"PK")
+    import io
+    from openpyxl import load_workbook
+    wb = load_workbook(io.BytesIO(raw))
+    assert "Predictions" in wb.sheetnames and "Recommendations" in wb.sheetnames
+    first_col = [c.value for c in wb["Predictions"]["A"]]
+    assert "Yield" in first_col and any(str(v).startswith("What to expect in the next week") for v in first_col if v)
+    assert [c.value for c in wb["Recommendations"]["B"]][2:4] != [None, None]       # at least one recommendation row (logo rows first)
     assert client.post(f"/v1/jobs/{job_id}/rerun", json={"scenario": {"colour": 1}}).status_code == 422
 
 

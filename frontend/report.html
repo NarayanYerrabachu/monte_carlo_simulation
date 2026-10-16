@@ -59,6 +59,21 @@
     <div class="findings" id="findings"></div>
   </section>
 
+  <section aria-labelledby="h-pred" id="pred-section" hidden>
+    <div class="section-head">
+      <span class="eyebrow">Predictions</span>
+      <h2 id="h-pred">What to expect in the next period</h2>
+      <p id="pred-text"></p>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Metric</th><th id="pred-h-exp">Expected</th><th>Likely range (90%)</th><th>Alert</th><th id="pred-h-p">P(breach)</th><th>P(≥1 in 20)</th><th id="pred-h-recent">Recent</th><th>Outlook</th></tr></thead>
+        <tbody id="pred-rows"></tbody>
+      </table>
+    </div>
+    <p class="small" id="pred-note"></p>
+  </section>
+
   <section aria-labelledby="h-model">
     <div class="section-head">
       <span class="eyebrow">Model</span>

@@ -50,6 +50,29 @@ function render(sc, job) {
     html("span", "big num", f.value, c); html("span", "label", f.label, c); html("span", "sub num", f.sub, c);
   });
 
+  const pr = s.predictions;
+  $("pred-section").hidden = !(pr && pr.rows && pr.rows.length);
+  if (pr && pr.rows && pr.rows.length) {
+    $("h-pred").textContent = `What to expect in the next ${pr.horizon}`;
+    $("pred-text").textContent = pr.text || "";
+    $("pred-note").textContent = pr.note || "";
+    $("pred-h-exp").textContent = `Expected next ${pr.horizon}`;
+    $("pred-h-p").textContent = `P(breach) next ${pr.horizon}`;
+    $("pred-h-recent").textContent = `Recent ${unit}`;
+    const pb = $("pred-rows"); pb.replaceChildren();
+    pr.rows.forEach((r) => {
+      const row = pb.insertRow();
+      [r.label, fv(r.expected, r.fmt, r.unit), `${fv(r.low, r.fmt, r.unit)} – ${fv(r.high, r.fmt, r.unit)}`, r.alert == null ? "–" : fv(r.alert, r.fmt, r.unit),
+       r.p_over == null ? "–" : pct(r.p_over), r.p_over_20 == null ? "–" : pct(r.p_over_20), r.drift || "–", r.outlook]
+        .forEach((v, i) => { const td = row.insertCell(); td.textContent = v; if (i === 6 && (v === "above" || v === "below")) td.style.color = "var(--s2)"; });
+    });
+    if (pr.high) {
+      const row = pb.insertRow();
+      [`High-risk ${records}`, (pr.high.expected || 0).toFixed(1), `0 – ${num(pr.high.p95)}`, "–", pct(pr.high.p_any), `${pct(pr.high.p_any_5)} (in 5)`, "–", "records the anomaly model flags"]
+        .forEach((v) => { row.insertCell().textContent = v; });
+    }
+  }
+
   const tb = $("inputs"); tb.replaceChildren();
   let tr = tb.insertRow();
   tr.insertCell().textContent = `${cap(records)} in the data`;

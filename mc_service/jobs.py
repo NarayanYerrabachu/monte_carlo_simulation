@@ -198,6 +198,9 @@ class JobStore:
                              "to send the data, then re-run.")
         section = getattr(base, test)
         changes = dict(overrides.get(test) or {})
+        if test == "scenario" and changes.get("assumptions") is not None:   # validated objects, not raw dicts
+            from mc_service.contract import ScenarioAssumption
+            changes["assumptions"] = {key: ScenarioAssumption.model_validate(v) for key, v in changes["assumptions"].items()}
         if test == "scenario" and "alerts" in changes:          # per-metric alert thresholds
             alerts = changes.pop("alerts") or {}
             changes["metrics"] = [m.model_copy(update={"alert": alerts[m.key]}) if m.key in alerts else m

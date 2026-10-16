@@ -501,4 +501,54 @@ def _narrative(s: ScenarioInput, metrics: list[dict], k: dict, regimes: list[dic
         recs.append({"title": "Treat the ranges as a floor",
                      "text": "The backtest shows the newest periods moved beyond what the earlier ones would have predicted; "
                              "the data is drifting, so the simulated spread understates the risk ahead."})
-    return {"findings": findings, "text": text, "recommendations": recs[:5]}
+    return {"findings": findings, "text": text, "recommendations": recs[:5],
+            "predictions": _predictions(s, metrics, k, bt, has_scores, unit)}
+
+
+def _predictions(s: ScenarioInput, metrics: list[dict], k: dict, bt: dict, has_scores: bool, unit: str) -> dict[str, Any]:
+    """What the simulation says about the next period(s): expected value, likely range, chance
+    of breaching the alert in the next one and in the next 5 / 20 periods (independent periods),
+    and whether the most recent periods (the backtest's held-out part) ran above or below it."""
+    period = s.period_label
+    recent = {r["key"]: r for r in (bt or {}).get("metrics") or []} if bt and bt.get("available", True) else {}
+    rows = []
+    for m in metrics:
+        key, fmt, u = m["key"], m["fmt"], m.get("unit")
+        p = k.get(f"{key}_p_over")
+        p5, p95, mean = k.get(f"{key}_p5"), k.get(f"{key}_p95"), k.get(f"{key}_mean")
+        r = recent.get(key) or {}
+        obs, sim_mean = r.get("observed_mean"), r.get("sim_mean")
+        drift = None
+        if obs is not None and sim_mean is not None and p5 is not None and p95 is not None and p95 > p5:
+            rel = (obs - sim_mean) / (p95 - p5)
+            drift = "above" if rel > 0.25 else "below" if rel < -0.25 else "in line"
+        outlook = ("no alert set" if p is None else
+                   "very likely stays below the alert" if p < 0.05 else
+                   "usually below the alert" if p < 0.2 else
+                   "breaches the alert often" if p < 0.5 else "breaches the alert more often than not")
+        rows.append({"key": key, "label": m["label"], "unit": u, "fmt": fmt, "agg": m["agg"],
+                     "expected": mean, "low": p5, "high": p95, "alert": m.get("alert"), "p_over": p,
+                     "p_over_5": (1 - (1 - p) ** 5) if p is not None else None,
+                     "p_over_20": (1 - (1 - p) ** 20) if p is not None else None,
+                     "recent": obs, "drift": drift, "outlook": outlook})
+    high = None
+    if has_scores:
+        high = {"expected": k.get("high_mean"), "p95": k.get("high_p95"), "p_any": k.get("p_any_high"),
+                "p_any_5": (1 - (1 - k["p_any_high"]) ** 5) if k.get("p_any_high") is not None else None}
+    worst = max((r for r in rows if r["p_over"] is not None), key=lambda r: r["p_over"], default=None)
+    parts = []
+    if worst:
+        parts.append(f"For the next {period}, {worst['label']} is the metric most likely to breach its alert: "
+                     f"{_val(worst['p_over'], 'pct', None)} for one {period}, {_val(worst['p_over_20'], 'pct', None)} for at least one of the next 20.")
+    drifting = [r for r in rows if r["drift"] in ("above", "below")]
+    if drifting:
+        parts.append("The most recent " + unit + " ran " + "; ".join(f"{r['label']} {r['drift']} the simulated range" for r in drifting[:3])
+                     + ": read those predictions as a floor, the data is moving.")
+    elif recent:
+        parts.append(f"The most recent {unit} ran in line with the simulation, so the ranges below are a fair forecast.")
+    if high:
+        parts.append(f"Expect about {high['expected']:.1f} high-risk {s.record_label} in the next {period} "
+                     f"(up to {_val(high['p95'], 'int', None)} on a bad one); the chance of at least one is {_val(high['p_any'], 'pct', None)}.")
+    return {"horizon": period, "rows": rows, "high": high, "text": " ".join(parts),
+            "note": (f"Expected values and ranges come from the {k.get('n', 0):,} simulated {unit}. Multi-{period} chances treat {unit} as independent "
+                     f"draws from the same history: a simplification that understates clustered risk.")}

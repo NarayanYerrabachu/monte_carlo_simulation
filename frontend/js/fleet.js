@@ -246,6 +246,7 @@ function renderScenario(sc) {
       .forEach((v) => { tr.insertCell().textContent = v; });
   });
 
+  renderPredictions(s, cfg);
   renderDrivers(s, tones);
   renderRecommendations(s);
   renderContext(s.context || {}, !!s.context);
@@ -295,6 +296,33 @@ function readAssumptions() {
     else (assumptions[inp.dataset.key] = assumptions[inp.dataset.key] || {})[inp.dataset.field] = v;
   });
   return { assumptions, alerts };
+}
+function renderPredictions(s, cfg) {
+  const p = s.predictions, card = $("pred-card");
+  card.hidden = !(p && p.rows && p.rows.length);
+  if (card.hidden) return;
+  $("pred-title").textContent = `What to expect in the next ${p.horizon}`;
+  $("pred-text").textContent = p.text || "";
+  $("pred-note").textContent = p.note || "";
+  const tb = $("pred-table"); tb.replaceChildren();
+  const head = tb.createTHead().insertRow();
+  ["Metric", `Expected next ${p.horizon}`, "Likely range (90%)", "Alert", `P(breach) next ${p.horizon}`, "P(≥1 in 20)", `Recent ${s.dashboard.unit}`, "Outlook"]
+    .forEach((h) => node("th", "", h, head));
+  const body = tb.createTBody();
+  p.rows.forEach((r) => {
+    const tr = body.insertRow();
+    [r.label, fmtVal(r.expected, r.fmt, r.unit), `${fmtVal(r.low, r.fmt, r.unit)} – ${fmtVal(r.high, r.fmt, r.unit)}`,
+     r.alert == null ? "–" : fmtVal(r.alert, r.fmt, r.unit), r.p_over == null ? "–" : pct(r.p_over), r.p_over_20 == null ? "–" : pct(r.p_over_20),
+     r.drift || "–", r.outlook].forEach((v, i) => {
+      const td = tr.insertCell(); td.textContent = v;
+      if (i === 6 && (v === "above" || v === "below")) td.style.color = cssVar("--warm");
+    });
+  });
+  if (p.high) {
+    const tr = body.insertRow();
+    [`High-risk ${cfg.record_label}`, (p.high.expected || 0).toFixed(1), `0 – ${num(p.high.p95)}`, "–", pct(p.high.p_any), `${pct(p.high.p_any_5)} (in 5)`, "–",
+     "records the anomaly model flags"].forEach((v) => { tr.insertCell().textContent = v; });
+  }
 }
 function renderWords(s) {
   const t = s.text || {};
