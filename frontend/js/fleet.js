@@ -597,12 +597,14 @@ async function poll(generation) {
   }
 }
 
-function selectJob(jobId) {
+function selectJob(jobId, keepWhatIf = false) {
   clearTimeout(state.timer);
   state.generation += 1;
   state.jobId = jobId || null;
   $("result").hidden = true;
-  $("whatif").hidden = true;
+  // a re-run keeps the what-if box on screen: its progress bar is the only sign the new job runs
+  $("whatif").hidden = !keepWhatIf;
+  if (keepWhatIf) { $("progress").hidden = false; $("bar").style.width = "0"; $("msg").textContent = "Starting the new run…"; }
   setDownloads(false);
   $("nav-live").href = jobId ? `/?job=${encodeURIComponent(jobId)}` : "/";
   const navReport = $("nav-report");
@@ -634,7 +636,7 @@ async function rerun() {
   try {
     const job = await api(`/v1/jobs/${state.jobId}/rerun`, { method: "POST", body: JSON.stringify({ n_sims: Number($("in-sims").value) || null, ...params }) });
     await refreshJobs(job.job_id);
-    selectJob(job.job_id);
+    selectJob(job.job_id, true);
     showError("");
   } catch (e) {
     $("rerun").disabled = false;
