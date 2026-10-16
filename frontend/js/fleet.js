@@ -42,6 +42,8 @@ const state = { jobId: null, timer: null, generation: 0, kind: "fleet", unit: "o
 function setKind(kind, sc) {
   state.kind = kind;
   const scenario = kind === "scenario";
+  const demo = $("nav-demo");
+  if (demo) demo.hidden = scenario;                            // the fixed-input fleet example only fits fleet data
   document.querySelectorAll(".fleet-only").forEach((e) => { e.hidden = scenario; });
   document.querySelectorAll(".scenario-only").forEach((e) => { e.hidden = !scenario; });
   $("fleet-charts").hidden = scenario;

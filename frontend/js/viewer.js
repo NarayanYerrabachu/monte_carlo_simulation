@@ -579,6 +579,8 @@ async function poll(generation) {
     if (generation !== state.generation) return;
     state.status = view.status;
     const feed = view.live.fleet || view.live.scenario;
+    const demo = $("nav-demo");
+    if (demo) demo.hidden = !view.live.fleet;                 // the fixed-input fleet example only fits fleet data
     const p = (view.progress && (view.progress.fleet || view.progress.scenario)) || { done: 0, total: 0 };
     const errs = Object.entries(view.errors || {}).map(([t, e]) => `${t}: ${e}`).join(" · ");
     $("status-line").textContent = `simulation ${view.status} · ${int(p.done)} / ${int(p.total)} ${unitWord()} computed in ${view.elapsed_s.toFixed(1)} s · ${view.dataset_id}` + (errs ? ` · ${errs}` : "");

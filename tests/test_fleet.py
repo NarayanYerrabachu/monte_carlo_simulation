@@ -103,7 +103,7 @@ def test_fleet_demo_page_and_viewer_link(client):
     page = client.get("/fleet-demo")
     assert page.status_code == 200 and "Download PDF" in page.text and "Download Excel" in page.text
     assert "fleet_report.js" in page.text and "assumed inputs" in page.text
-    assert 'href="/fleet-demo"' in client.get("/").text
+    assert 'href="/fleet-demo" id="nav-demo" hidden' in client.get("/").text      # shown only for fleet jobs
 
 
 def test_report_page_is_the_assumption_report_of_a_job_with_or_without_a_job(client):
