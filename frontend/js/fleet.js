@@ -277,7 +277,7 @@ function renderAssumptions(s, assumed) {
     [["low", a.low], ["high", a.high], ["shift", a.shift], ["alert", m.alert]].forEach(([field, v]) => {
       const inp = document.createElement("input");
       inp.type = "number"; inp.step = "any"; inp.dataset.key = m.key; inp.dataset.field = field;
-      inp.value = v == null ? "" : v;
+      inp.value = v == null ? "" : Number(Number(v).toPrecision(4));      // a readable default, not 0.7229424…
       inp.placeholder = field === "alert" ? "P90 of history" : "–";
       tr.insertCell().appendChild(inp);
     });

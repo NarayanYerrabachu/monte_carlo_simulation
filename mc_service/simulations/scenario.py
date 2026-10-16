@@ -408,7 +408,9 @@ def _val(v: float | None, fmt: str, unit: str | None) -> str:
         return "–"
     if fmt == "pct":
         return f"{100 * v:.1f}%"
-    txt = f"{v:,.0f}" if fmt == "int" or abs(v) >= 1000 else f"{v:,.2f}"
+    a = abs(v)
+    txt = (f"{v:,.0f}" if fmt == "int" or a >= 1000 else f"{v:,.2f}" if a >= 1 else f"{v:,.3f}" if a >= 0.1
+           else f"{v:,.4f}" if a > 0 else "0")                    # small values keep their digits (LogReturn 0.0004)
     return f"{txt} {unit}".strip() if unit else txt
 
 
