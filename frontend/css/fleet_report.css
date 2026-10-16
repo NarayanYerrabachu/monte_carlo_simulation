@@ -62,14 +62,14 @@ body {
   padding-inline: 20px;
   padding-block: 0 48px;
 }
-.page { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
+.page { max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 44px; }
 
 h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-spacing: .005em; }
 h1 { font-size: clamp(34px, 5.4vw, 54px); line-height: 1.02; font-weight: 700; }
 h2 { font-size: 30px; line-height: 1.1; font-weight: 600; }
 h3 { font-size: 20px; line-height: 1.2; font-weight: 600; }
 p { margin: 0; }
-.lede { font-size: 19px; color: var(--ink-2); max-width: 60ch; }
+.lede { font-size: 19px; color: var(--ink-2); }
 .eyebrow { font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
 .small { font-size: 14px; color: var(--muted); }
 .num { font-variant-numeric: tabular-nums; }
