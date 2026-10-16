@@ -171,13 +171,18 @@ function renderScenario(sc) {
   $("in-sims").value = sc.n_completed;
   $("in-clean").checked = cfg.exclude_anomalies_above != null;
 
+  const assumed = {};
+  (s.inputs.assumptions || []).forEach((a) => { assumed[a.key] = a; });
   const ins = $("inputs"); ins.replaceChildren();
-  $("inputs-sub").textContent = "observed in the data, per record (P5 – P95)";
+  $("inputs-sub").textContent = Object.keys(assumed).length ? "per record (P5 – P95); ★ = assumed" : "observed in the data, per record (P5 – P95)";
   tile(ins, `${records[0].toUpperCase()}${records.slice(1)} in data`, cfg.n_periods ? `${num(cfg.n_records)} · ${num(cfg.n_periods)} ${unit}` : num(cfg.n_records));
   s.metrics.forEach((m) => {
-    const q = s.inputs.metrics[m.key];
-    tile(ins, m.label + (m.unit ? ` (${m.unit})` : ""), q ? `${fmtVal(q.p5, m.record_fmt)} – ${fmtVal(q.p95, m.record_fmt)}` : "–");
+    const q = s.inputs.metrics[m.key], a = assumed[m.key];
+    const star = a && (a.low != null || a.high != null || a.shift) ? " ★" : "";
+    tile(ins, m.label + (m.unit ? ` (${m.unit})` : "") + star, q ? `${fmtVal(q.p5, m.record_fmt)} – ${fmtVal(q.p95, m.record_fmt)}` : "–");
   });
+  renderAssumptions(s, assumed);
+  renderWords(s);
 
   const eng = $("engine"); eng.replaceChildren();
   node("div", "eyebrow", "Monte Carlo engine", eng);
@@ -239,6 +244,8 @@ function renderScenario(sc) {
       .forEach((v) => { tr.insertCell().textContent = v; });
   });
 
+  renderDrivers(s, tones);
+  renderRecommendations(s);
   renderContext(s.context || {}, !!s.context);
   const a = s.anomalies, an = $("anoms"); an.replaceChildren();
   node("p", "", `${num(a.high_risk)} of ${num(cfg.n_records)} records score HIGH (≥ ${cfg.high_anomaly}).`, an);
@@ -253,6 +260,64 @@ function renderScenario(sc) {
   renderConvergence(cv, cv.label || "estimate", m0.fmt === "pct" ? ".1%" : "", last >= 0
     ? `After ${num(sc.n_completed)} scenarios: ${cv.label} = ${fmtVal(cv.p[last], m0.fmt, m0.unit)}, 95% CI ${fmtVal(cv.lo[last], m0.fmt, m0.unit)} – ${fmtVal(cv.hi[last], m0.fmt, m0.unit)}.${sc.stopped_early ? " Stopped early by the time budget." : ""}`
     : "");
+}
+
+// ── assumed inputs (what-if editor), words, drivers, recommendations ────────
+function renderAssumptions(s, assumed) {
+  const tb = $("assume-table"); tb.replaceChildren();
+  $("assume-wrap").hidden = false;
+  const head = tb.createTHead().insertRow();
+  ["Input (per record)", "Observed P5 – P95", "Assumed low", "Assumed high", "Shift (added)", "Alert per period"].forEach((h) => node("th", "", h, head));
+  const body = tb.createTBody();
+  s.metrics.forEach((m) => {
+    const o = (s.inputs.observed || {})[m.key] || s.inputs.metrics[m.key], a = assumed[m.key] || {};
+    const tr = body.insertRow();
+    tr.insertCell().textContent = m.label + (m.unit ? ` (${m.unit})` : "");
+    tr.insertCell().textContent = o ? `${fmtVal(o.p5, m.record_fmt)} – ${fmtVal(o.p95, m.record_fmt)}` : "–";
+    [["low", a.low], ["high", a.high], ["shift", a.shift], ["alert", m.alert]].forEach(([field, v]) => {
+      const inp = document.createElement("input");
+      inp.type = "number"; inp.step = "any"; inp.dataset.key = m.key; inp.dataset.field = field;
+      inp.value = v == null ? "" : v;
+      inp.placeholder = field === "alert" ? "P90 of history" : "–";
+      tr.insertCell().appendChild(inp);
+    });
+  });
+}
+function readAssumptions() {
+  const assumptions = {}, alerts = {};
+  document.querySelectorAll("#assume-table input").forEach((inp) => {
+    if (inp.value === "") return;
+    const v = Number(inp.value);
+    if (!isFinite(v)) return;
+    if (inp.dataset.field === "alert") alerts[inp.dataset.key] = v;
+    else (assumptions[inp.dataset.key] = assumptions[inp.dataset.key] || {})[inp.dataset.field] = v;
+  });
+  return { assumptions, alerts };
+}
+function renderWords(s) {
+  const t = s.text || {};
+  $("words-card").hidden = !t.results;
+  $("words-results").textContent = t.results || "";
+  $("words-inputs").textContent = t.inputs || "";
+}
+function renderDrivers(s, tones) {
+  const d = (s.sensitivity || []).filter((x) => x.alerts != null || x.high != null);
+  $("drivers-card").hidden = !d.length;
+  if (!d.length) return;
+  const vals = d.map((x) => (x.alerts != null ? x.alerts : x.high));
+  const withAlerts = d.some((x) => x.alerts != null);
+  Plotly.react("c-drivers", [{ type: "bar", orientation: "h", y: d.map((x) => x.label), x: vals,
+    marker: { color: vals.map((v) => (v >= 0 ? tones.blue : tones.warm)) }, hovertemplate: "%{y}: %{x:+.2f}<extra></extra>" }],
+    baseLayout(withAlerts ? "correlation with the number of alerts in a period" : "correlation with high-risk records in a period", "",
+      { xaxis: { range: [-1, 1], gridcolor: cssVar("--line"), title: { text: withAlerts ? "correlation with alerts per period" : "correlation with high-risk records" } },
+        yaxis: { autorange: "reversed", automargin: true } }), PLOT_CONFIG);
+  $("drivers-note").textContent = (s.text || {}).drivers || "";
+}
+function renderRecommendations(s) {
+  const ol = $("recs"); ol.replaceChildren();
+  const recs = s.recommendations || [];
+  $("recs-card").hidden = !recs.length;
+  recs.forEach((r) => { const li = node("li", "", undefined, ol); node("b", "", r.title + ". ", li); li.append(r.text); });
 }
 
 // ── relationship significance (when the job carried the test) ───────────────
@@ -555,6 +620,11 @@ async function rerun() {
   for (const k of ["fleet_size", "delivery_target_h", "sla_on_time"]) if (fleet[k] == null) delete fleet[k];
   const scenario = { exclude_anomalies_above: $("in-clean").checked ? 0.6 : null };
   if (Number($("in-period").value)) scenario.period_size = Number($("in-period").value);
+  if (state.kind === "scenario") {
+    const { assumptions, alerts } = readAssumptions();
+    scenario.assumptions = assumptions;                 // the whole set: an empty field means "no assumption"
+    if (Object.keys(alerts).length) scenario.alerts = alerts;
+  }
   const params = state.kind === "scenario" ? { scenario } : { fleet };
   $("rerun").disabled = true;
   try {

@@ -56,6 +56,21 @@ def _mean(x: np.ndarray) -> float | None:
     return float(x.mean()) if x.size else None
 
 
+def _spread(x: np.ndarray) -> dict[str, float] | None:
+    x = x[np.isfinite(x)]
+    if x.size == 0:
+        return None
+    p5, med, p95 = np.percentile(x, [5, 50, 95])
+    return {"p5": float(p5), "median": float(med), "p95": float(p95)}
+
+
+def _corr(a: np.ndarray, b: np.ndarray) -> float | None:
+    ok = np.isfinite(a) & np.isfinite(b)
+    if ok.sum() < 3 or a[ok].std() == 0 or b[ok].std() == 0:
+        return None
+    return float(np.corrcoef(a[ok], b[ok])[0, 1])
+
+
 def _fmt(m: ScenarioMetric) -> str:
     """How the viewer formats this metric: pct (rate), int (counts / sums) or num."""
     if m.rate and m.agg == "mean":
@@ -157,6 +172,28 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
         if excluded.all():
             raise ValueError("exclude_anomalies_above removes every record — nothing to simulate")
     pool = ~excluded
+    # observed spread per metric before any assumption, for the "observed vs assumed" table
+    observed = {met.key: _spread(M[pool, k]) for k, met in enumerate(metrics)}
+    # assumed inputs: a shift is added to every record; a range keeps only the records inside it
+    applied: list[dict[str, Any]] = []
+    for k, met in enumerate(metrics):
+        a = (s.assumptions or {}).get(met.key)
+        if a is None or (a.low is None and a.high is None and a.shift is None):
+            continue
+        if a.shift:
+            M[:, k] = M[:, k] + a.shift
+        inside = np.ones(n, dtype=bool)
+        if a.low is not None:
+            inside &= ~(np.nan_to_num(M[:, k], nan=a.low) < a.low)
+        if a.high is not None:
+            inside &= ~(np.nan_to_num(M[:, k], nan=a.high) > a.high)
+        removed = int((pool & ~inside).sum())
+        pool &= inside
+        applied.append({"key": met.key, "label": met.label, "low": a.low, "high": a.high, "shift": a.shift,
+                        "records_removed": removed})
+    if not pool.any():
+        raise ValueError("the assumed ranges leave no record to sample — widen them")
+    valid = np.isfinite(M)
     pool_ix = np.flatnonzero(pool)
 
     # periods (blocks): only when the data really has them
@@ -320,20 +357,27 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
     else:
         bt = backtest.unavailable("the data has no usable periods, so there is no time order to hold out")
 
-    def spread(x: np.ndarray) -> dict[str, float] | None:
-        x = x[np.isfinite(x)]
-        if x.size == 0:
-            return None
-        p5, med, p95 = np.percentile(x, [5, 50, 95])
-        return {"p5": float(p5), "median": float(med), "p95": float(p95)}
-
     described = [{"key": met.key, "label": met.label, "agg": met.agg, "unit": met.unit, "fmt": _fmt(met),
                   "record_fmt": "pct" if binary[k] else "num", "alert": alerts[k]} for k, met in enumerate(metrics)]
+
+    # what drives the risk: how each metric's period value moves with the number of alerts
+    # breached in that period and with its high-risk records (correlation over the scenarios)
+    n_alerts = np.zeros(len(sim))
+    for k, met in enumerate(metrics):
+        if alerts[k] is not None and len(sim):
+            n_alerts += np.nan_to_num(sim[:, k] > alerts[k]).astype(float)
+    sensitivity = [{"key": met.key, "label": met.label,
+                    "alerts": _corr(sim[:, k], n_alerts) if len(sim) and any(a is not None for a in alerts) else None,
+                    "high": _corr(sim[:, k], sim[:, m]) if len(sim) and has_scores else None}
+                   for k, met in enumerate(metrics)]
+    narrative = _narrative(s, described, kpi, regimes, tails, sensitivity, applied, observed, bt, convergence,
+                           size, int(pool.sum()), n, has_scores, unit) if res.n_completed else {}
     return {
         "test": "scenario",
         "n_completed": res.n_completed, "stopped_early": res.stopped_early, "elapsed_s": res.elapsed_s,
         "config": {"title": s.title, "period_size": size, "period_label": s.period_label, "record_label": s.record_label,
                    "high_anomaly": s.high_anomaly, "exclude_anomalies_above": s.exclude_anomalies_above,
+                   "assumptions": {a["key"]: {"low": a["low"], "high": a["high"], "shift": a["shift"]} for a in applied},
                    "n_records": n, "n_pool": int(pool.sum()), "n_periods": len(blocks) if blocks else None,
                    "n_sims": ctx.settings.n_sims, "seed": ctx.settings.seed,
                    "method": (f"{s.period_label}-block bootstrap of the records" if blocks
@@ -350,7 +394,109 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
                           "record_ids": [s.record_id[i] for i in np.flatnonzero(excluded)[:50]] if s.record_id else []},
             "convergence": convergence, "backtest": bt,
             "inputs": {"records": n, "periods": len(blocks) if blocks else None, "period_size": size,
-                       "metrics": {met.key: spread(M[pool, k]) for k, met in enumerate(metrics)}},
+                       "metrics": {met.key: _spread(M[pool, k]) for k, met in enumerate(metrics)},
+                       "observed": observed, "assumptions": applied},
+            "sensitivity": sensitivity,
+            **narrative,
             "context": s.context,
         },
     }
+
+
+def _val(v: float | None, fmt: str, unit: str | None) -> str:
+    if v is None:
+        return "–"
+    if fmt == "pct":
+        return f"{100 * v:.1f}%"
+    txt = f"{v:,.0f}" if fmt == "int" or abs(v) >= 1000 else f"{v:,.2f}"
+    return f"{txt} {unit}".strip() if unit else txt
+
+
+def _narrative(s: ScenarioInput, metrics: list[dict], k: dict, regimes: list[dict], tails: list[dict],
+               sensitivity: list[dict], applied: list[dict], observed: dict, bt: dict, cv: dict,
+               size: int, n_pool: int, n: int, has_scores: bool, unit: str) -> dict[str, Any]:
+    """Key results, section texts and recommendations in plain words, all computed from the numbers
+    (the same for the page, the PDF and the Excel file)."""
+    period, records = s.period_label, s.record_label
+    findings = []
+    for m in metrics[:4]:
+        key, fmt, u = m["key"], m["fmt"], m.get("unit")
+        how = "total" if m["agg"] == "sum" else "average"
+        sub = (f"P(> {_val(m['alert'], fmt, u)}) = {_val(k.get(f'{key}_p_over'), 'pct', None)}" if m.get("alert") is not None
+               else f"90% of {unit} between {_val(k.get(f'{key}_p5'), fmt, u)} and {_val(k.get(f'{key}_p95'), fmt, u)}")
+        findings.append({"value": _val(k.get(f"{key}_mean"), fmt, u), "label": f"{m['label']} ({how} per {period})", "sub": sub})
+    if has_scores:
+        findings.append({"value": _val(k.get("p_any_high"), "pct", None), "label": f"{period.capitalize()}s with a high-risk record",
+                         "sub": f"expected {k.get('high_mean', 0):.1f} high-risk {records} per {period}, P95 {_val(k.get('high_p95'), 'int', None)}"})
+    # the metric most often over its alert, the regime most over-represented in the tails
+    worst = max((m for m in metrics if m.get("alert") is not None and k.get(f"{m['key']}_p_over") is not None),
+                key=lambda m: k[f"{m['key']}_p_over"], default=None)
+    top_regime, top_lift, top_tail = None, 0.0, None
+    for g in regimes:
+        for t in tails:
+            lift = g["tail_lift"].get(t["key"])
+            if lift is not None and lift > top_lift and g["share"] >= 0.02:
+                top_regime, top_lift, top_tail = g, lift, t
+    drivers = sorted((d for d in sensitivity if d.get("alerts") is not None or d.get("high") is not None),
+                     key=lambda d: -max(abs(d.get("alerts") or 0), abs(d.get("high") or 0)))
+    text = {
+        "inputs": (f"Every simulated {period} resamples {size:,} {records} from the {n_pool:,} in the sampling pool"
+                   + (f" ({n:,} in the data; {n - n_pool:,} left out by the assumptions and the anomaly filter)" if n_pool < n else "")
+                   + ". The inputs are the data's own values: nothing is fitted."
+                   + (" Assumed ranges and shifts: " + "; ".join(
+                       f"{a['label']}" + (f" between {a['low']:g} and {a['high']:g}" if a["low"] is not None and a["high"] is not None
+                                          else f" at least {a['low']:g}" if a["low"] is not None
+                                          else f" at most {a['high']:g}" if a["high"] is not None else "")
+                       + (f", shifted by {a['shift']:+g}" if a["shift"] else "")
+                       + (f" ({a['records_removed']:,} {records} outside)" if a["records_removed"] else "")
+                       for a in applied) + "." if applied else "")),
+        "results": " ".join(f"{f['label']}: {f['value']} ({f['sub']})." for f in findings),
+        "drivers": ((f"{drivers[0]['label']} moves most with the risk (correlation "
+                     f"{(drivers[0].get('alerts') if drivers[0].get('alerts') is not None else drivers[0].get('high')):+.2f}); "
+                     + ("; ".join(f"{d['label']} {(d.get('alerts') if d.get('alerts') is not None else d.get('high')):+.2f}" for d in drivers[1:3])
+                        + "." if len(drivers) > 1 else "")) if drivers else "No alert thresholds and no anomaly scores: nothing to correlate the inputs with.")
+                   + (f" Regime '{top_regime['label']}' ({top_regime['share']:.0%} of the {records}) appears ×{top_lift:.1f} as often in the "
+                      f"{unit} with the highest {top_tail['label']}." if top_regime else ""),
+        "quality": (f"After {k.get('n', 0):,} scenarios the estimate of {cv.get('label', 'the first metric')} is "
+                    f"{_val(cv['p'][-1], metrics[0]['fmt'], metrics[0].get('unit'))} with a 95% interval of "
+                    f"{_val(cv['lo'][-1], metrics[0]['fmt'], metrics[0].get('unit'))} to {_val(cv['hi'][-1], metrics[0]['fmt'], metrics[0].get('unit'))}: "
+                    "more scenarios would not change the conclusions; what remains uncertain is the data and the assumptions."
+                    if cv.get("p") else "") + (f" Backtest: {bt.get('verdict', '')}." if bt and bt.get("verdict") else ""),
+    }
+    recs = []
+    if worst is not None and k[f"{worst['key']}_p_over"] >= 0.2:
+        recs.append({"title": f"Plan for {worst['label']} above its alert",
+                     "text": (f"In {_val(k[f'{worst['key']}_p_over'], 'pct', None)} of simulated {unit} {worst['label']} exceeds "
+                              f"{_val(worst['alert'], worst['fmt'], worst.get('unit'))}. A plan built on the expected value "
+                              f"({_val(k.get(f'{worst['key']}_mean'), worst['fmt'], worst.get('unit'))}) falls short that often; "
+                              f"size reserves at the 95th percentile, {_val(k.get(f'{worst['key']}_p95'), worst['fmt'], worst.get('unit'))}.")})
+    elif metrics:
+        m0 = metrics[0]
+        recs.append({"title": f"Set an alert for {m0['label']}",
+                     "text": (f"No alert is breached often. A threshold at the 95th percentile, "
+                              f"{_val(k.get(f'{m0['key']}_p95'), m0['fmt'], m0.get('unit'))} per {period}, flags the one in twenty "
+                              f"{unit} that deserve a look; edit it in the what-if box.")})
+    if top_regime is not None and top_lift >= 1.5:
+        recs.append({"title": f"Watch regime '{top_regime['label']}'",
+                     "text": (f"It holds {top_regime['share']:.0%} of the {records} but appears ×{top_lift:.1f} as often in the {unit} "
+                              f"with the highest {top_tail['label']}. The TDA regime is a leading indicator: {records} that fall into it "
+                              "deserve a check before the period closes.")})
+    if drivers and drivers[0].get("alerts") is not None and abs(drivers[0]["alerts"]) >= 0.3 and len(metrics) > 1:
+        recs.append({"title": f"Act on {drivers[0]['label']} first",
+                     "text": (f"Of all inputs it moves most with the number of alerts in a {period} (correlation {drivers[0]['alerts']:+.2f}). "
+                              f"Changing it by its own spread ({_val((observed.get(drivers[0]['key']) or {}).get('p5'), 'num', None)} to "
+                              f"{_val((observed.get(drivers[0]['key']) or {}).get('p95'), 'num', None)} per record) changes the outcome more than "
+                              "the other inputs do; try it with a shift in the what-if box.")})
+    if has_scores and (k.get("p_any_high") or 0) >= 0.5:
+        recs.append({"title": "Inspect the high-risk records before trusting the tails",
+                     "text": (f"{_val(k.get('p_any_high'), 'pct', None)} of {unit} contain a record the anomaly model scores ≥ {s.high_anomaly:g}. "
+                              "If those are data errors, switch the exclusion on and re-run; if they are real events, the tails above are the risk.")})
+    if applied:
+        recs.append({"title": "Read the results as conditional",
+                     "text": (f"The assumed ranges keep {n_pool:,} of {n:,} {records}. The results hold if the inputs really stay inside them; "
+                              "re-run without the assumptions to see the unconditional picture.")})
+    if bt and bt.get("verdict") == "does not hold":
+        recs.append({"title": "Treat the ranges as a floor",
+                     "text": "The backtest shows the newest periods moved beyond what the earlier ones would have predicted; "
+                             "the data is drifting, so the simulated spread understates the risk ahead."})
+    return {"findings": findings, "text": text, "recommendations": recs[:5]}

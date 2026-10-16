@@ -137,3 +137,20 @@ def test_backtest_needs_enough_periods():
     rows.pop("period")
     bt = _run(rows)["summary"]["backtest"]
     assert bt["available"] is False and "no usable periods" in bt["reason"]
+
+
+def test_assumed_ranges_and_shifts_condition_the_simulation_and_are_reported():
+    rows = _batches(bad_period=3)
+    base = _run(rows)
+    cond = _run(rows, assumptions={"yield_pct": {"low": 85.0}, "cost": {"shift": 250.0}})
+    assert base["summary"]["findings"] and base["summary"]["recommendations"] and base["summary"]["text"]["results"]
+    assert base["summary"]["inputs"]["assumptions"] == [] and base["summary"]["sensitivity"][0]["key"] == "yield_pct"
+    a = {x["key"]: x for x in cond["summary"]["inputs"]["assumptions"]}
+    assert a["yield_pct"]["records_removed"] == 20 and a["cost"]["shift"] == 250.0
+    assert cond["config"]["n_pool"] == 220 and cond["config"]["assumptions"]["yield_pct"]["low"] == 85.0
+    assert cond["summary"]["kpi"]["yield_pct_p5"] > 85.0                     # the bad week is gone
+    assert cond["summary"]["kpi"]["cost_mean"] == pytest.approx(20 * (1000 + 250), rel=0.01)   # bad week gone, +250 per record, summed
+    assert any("conditional" in r["title"].lower() for r in cond["summary"]["recommendations"])
+    assert "assumed" in cond["summary"]["text"]["inputs"].lower()
+    with pytest.raises(ValueError):
+        _run(rows, assumptions={"yield_pct": {"low": 1000.0}})

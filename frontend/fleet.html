@@ -54,6 +54,10 @@
         <label class="check"><input id="in-clean" type="checkbox"> <span id="lbl-clean">Exclude operating records the ML model flags as anomalies (score ≥ 0.6)</span></label>
         <button id="rerun" class="primary" type="button">Re-run simulation</button>
       </div>
+      <div class="scenario-only" id="assume-wrap" hidden>
+        <p class="note">Assumed inputs: leave a field empty to use the data as it is. A range keeps only the records inside it (the result is then conditional on the assumption); a shift is added to every record's value (a stress); the alert is the per-period threshold the report counts breaches against.</p>
+        <div class="table-wrap"><table id="assume-table"></table></div>
+      </div>
       <div class="progress" id="progress" hidden><div id="bar"></div></div>
       <div class="note" id="msg"></div>
     </section>
@@ -74,6 +78,11 @@
       </section>
 
       <section class="kpis" id="kpis"></section>
+      <section class="card scenario-only" id="words-card" hidden>
+        <h3>In words</h3>
+        <p id="words-results"></p>
+        <p class="note" id="words-inputs"></p>
+      </section>
 
       <section class="charts" id="gx-charts" hidden></section>
       <section class="charts" id="fleet-charts">
@@ -81,6 +90,12 @@
         <div class="card"><h3>Vehicle requirement distribution</h3><div class="chart" id="c-vehicles"></div></div>
         <div class="card"><h3>Delivery outcome</h3><div class="chart" id="c-outcome"></div></div>
         <div class="card"><h3>Maintenance cost distribution</h3><div class="chart" id="c-maint"></div></div>
+      </section>
+
+      <section class="card scenario-only" id="drivers-card" hidden>
+        <h3>What drives the risk</h3>
+        <p class="note" id="drivers-note"></p>
+        <div class="chart small" id="c-drivers"></div>
       </section>
 
       <section class="card">
@@ -101,6 +116,11 @@
       <section class="two">
         <div class="card"><h3>TDA / ML findings used</h3><div id="tda"></div></div>
         <div class="card"><h3>Data quality — ML anomalies</h3><div id="anoms"></div></div>
+      </section>
+
+      <section class="card scenario-only" id="recs-card" hidden>
+        <h3>Recommendations</h3>
+        <ol id="recs"></ol>
       </section>
 
       <section class="card">

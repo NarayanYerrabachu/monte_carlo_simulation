@@ -281,6 +281,13 @@ def test_scenario_job_end_to_end_with_reports_and_rerun(client):
     res2 = data(client.get(f"/v1/jobs/{again}/result"))["scenario"]
     assert res2["config"]["period_size"] == 10 and res2["n_completed"] == 60
     assert res2["summary"]["kpi"]["cost_alert"] == 9000 and res2["summary"]["kpi"]["cost_p_over"] == 1.0
+    r = client.post(f"/v1/jobs/{job_id}/rerun", json={"n_sims": 40, "scenario": {"assumptions": {"yield_pct": {"low": 85}}}})
+    assert r.status_code == 202
+    cond = _wait(client, data(r)["job_id"])
+    res3 = data(client.get(f"/v1/jobs/{cond['job_id']}/result"))["scenario"]
+    assert res3["summary"]["inputs"]["assumptions"][0]["key"] == "yield_pct" and res3["summary"]["recommendations"]
+    f = data(client.post("/v1/reports/job", json={"job_id": cond["job_id"], "format": "xlsx"}))
+    assert base64.b64decode(f["content"]).startswith(b"PK")
     assert client.post(f"/v1/jobs/{job_id}/rerun", json={"scenario": {"colour": 1}}).status_code == 422
 
 

@@ -886,6 +886,18 @@ def _scenario_charts(sc: dict) -> dict[str, Any]:
         ax.set_xlabel(f"simulated {s['dashboard']['unit']} (log scale)")
         ax.legend(frameon=False, fontsize=8, loc="upper right")
         out["convergence"] = _png(fig)
+    drivers = [d for d in s.get("sensitivity") or [] if d.get("alerts") is not None or d.get("high") is not None]
+    if drivers:
+        fig, ax = plt.subplots(figsize=(7.2, 0.6 + 0.4 * len(drivers)))
+        labels = [d["label"] for d in drivers]
+        vals = [d["alerts"] if d.get("alerts") is not None else d["high"] for d in drivers]
+        ax.barh(labels, vals, color=[BLUE if v >= 0 else ORANGE for v in vals])
+        ax.axvline(0, color="#999", lw=0.8)
+        ax.set_xlim(-1, 1)
+        ax.set_xlabel("correlation with the number of alerts in a period (or with its high-risk records)")
+        ax.invert_yaxis()
+        fig.tight_layout()
+        out["drivers"] = _png(fig)
     return out
 
 
@@ -904,12 +916,31 @@ def _scenario_story(sc: dict, job: dict) -> list:
     blocks = _scenario_blocks(sc)
     how = (f"draws one of the {num(c['n_periods'])} historical {unit} and resamples {num(c['period_size'])} of its "
            f"{records}" if c["n_periods"] else f"resamples {num(c['period_size'])} {records} from the whole dataset")
+    text = s.get("text") or {}
     story += [Spacer(1, 10), _flow(blocks), Spacer(1, 8), _tiles(blocks), Spacer(1, 8),
               Paragraph(f"Each simulated {period} {how} ({num(c['n_pool'])} of {num(c['n_records'])} records in the "
                         "pool). Nothing is fitted: the distributions are the data's own.", S["small"])]
+    if s.get("findings"):
+        story += [KeepTogether(_section("Summary", "Key results", text.get("results"))
+                               + [Paragraph(f"<b>{f['value']}</b> — {f['label']} ({f['sub']})", S["body"]) for f in s["findings"]])]
+    assumed = (s.get("inputs") or {}).get("assumptions") or []
+    rows = [_th(["Input (per record)", "Observed P5 – P95", "Assumed range", "Shift", "Records outside"])]
+    for m in s["metrics"]:
+        o = (s["inputs"].get("observed") or {}).get(m["key"]) or s["inputs"]["metrics"].get(m["key"])
+        a = next((x for x in assumed if x["key"] == m["key"]), None)
+        rng = "–"
+        if a and (a["low"] is not None or a["high"] is not None):
+            rng = f"{_fv(a['low'], m['record_fmt']) if a['low'] is not None else '…'} – {_fv(a['high'], m['record_fmt']) if a['high'] is not None else '…'}"
+        rows.append([Paragraph(m["label"], S["cell"]), f"{_fv(o['p5'], m['record_fmt'])} – {_fv(o['p95'], m['record_fmt'])}" if o else "–",
+                     rng, f"{a['shift']:+g}" if a and a.get("shift") else "–", num(a["records_removed"]) if a else "–"])
+    ta = Table(rows, colWidths=[5.2 * cm, 3.6 * cm, 3.6 * cm, 2.2 * cm, 2.4 * cm], repeatRows=1)
+    ta.setStyle(_table_style())
+    story += [KeepTogether(_section("Model", "Uncertain inputs: observed and assumed", text.get("inputs")) + [ta])]
     if png["dists"]:
         story += [KeepTogether(_section("Charts", "Distributions") + [_img(png["dists"][0])])]
         story += [_img(p) for p in png["dists"][1:]]
+    if "drivers" in png:
+        story += [KeepTogether(_section("Drivers", "What drives the risk", text.get("drivers")) + [_img(png["drivers"])])]
 
     shown = s["metrics"][:2]
     tail = s["tails"][0] if s.get("tails") else None
@@ -943,8 +974,12 @@ def _scenario_story(sc: dict, job: dict) -> list:
                  f"{num(a['excluded'])} records with anomaly score ≥ {a['threshold']} left out of the sampling pool.")
     story += [KeepTogether(_section("Context", "TDA / ML findings and data quality")
                            + [Paragraph(n, S["body"]) for n in notes])]
+    if s.get("recommendations"):
+        story += [KeepTogether(_section("Recommendations", "What to do with this")
+                               + [Paragraph(f"<b>{i}. {r['title']}.</b> {r['text']}", S["body"])
+                                  for i, r in enumerate(s["recommendations"], 1)])]
     if "convergence" in png:
-        story += [KeepTogether(_section("Quality", "Are the scenarios enough?") + [_img(png["convergence"])])]
+        story += [KeepTogether(_section("Quality", "Are the scenarios enough?", text.get("quality")) + [_img(png["convergence"])])]
     story += _backtest_story(s.get("backtest"))
     return story
 
@@ -982,14 +1017,40 @@ def _scenario_xlsx(sc: dict, job: dict, wb: Workbook) -> None:
         row += 1
     _widths(ws, [44, 13, 8, 14, 14, 14, 14, 14, 12])
 
-    ws = wb.create_sheet("Inputs (observed)")
-    _head(ws, 1, ["Input (per record)", "P5", "Median", "P95"])
+    for title, body in (("Key results", [f"{f['value']} — {f['label']} ({f['sub']})" for f in s.get("findings") or []]),
+                        ("Recommendations", [f"{i}. {r['title']}: {r['text']}" for i, r in enumerate(s.get("recommendations") or [], 1)]),
+                        ("In words", [v for v in (s.get("text") or {}).values() if v])):
+        if not body:
+            continue
+        row += 1
+        ws.cell(row=row, column=1, value=title).font = Font(bold=True)
+        for line in body:
+            row += 1
+            ws.cell(row=row, column=1, value=line)
+
+    ws = wb.create_sheet("Inputs")
+    assumed = {a["key"]: a for a in (s["inputs"].get("assumptions") or [])}
+    _head(ws, 1, ["Input (per record)", "Observed P5", "Observed median", "Observed P95", "Assumed low", "Assumed high",
+                  "Shift", "Records outside"])
     for i, m in enumerate(s["metrics"], 2):
         ws.cell(row=i, column=1, value=m["label"])
+        o = (s["inputs"].get("observed") or {}).get(m["key"]) or s["inputs"]["metrics"].get(m["key"]) or {}
         for j, part in enumerate(("p5", "median", "p95"), 2):
-            ws.cell(row=i, column=j, value=(s["inputs"]["metrics"].get(m["key"]) or {}).get(part)).number_format = \
-                xfmt(m["record_fmt"])
-    _widths(ws, [34, 14, 14, 14])
+            ws.cell(row=i, column=j, value=o.get(part)).number_format = xfmt(m["record_fmt"])
+        a = assumed.get(m["key"]) or {}
+        for j, part in enumerate(("low", "high", "shift"), 5):
+            ws.cell(row=i, column=j, value=a.get(part)).number_format = xfmt(m["record_fmt"])
+        ws.cell(row=i, column=8, value=a.get("records_removed"))
+    _widths(ws, [34, 14, 16, 14, 13, 13, 10, 15])
+
+    if s.get("sensitivity"):
+        ws = wb.create_sheet("Drivers")
+        _head(ws, 1, ["Input", "Correlation with alerts per period", "Correlation with high-risk records"])
+        for i, d in enumerate(s["sensitivity"], 2):
+            ws.cell(row=i, column=1, value=d["label"])
+            ws.cell(row=i, column=2, value=d.get("alerts")).number_format = "0.00"
+            ws.cell(row=i, column=3, value=d.get("high")).number_format = "0.00"
+        _widths(ws, [34, 30, 30])
 
     ws = wb.create_sheet("TDA regimes")
     tails = s.get("tails") or []

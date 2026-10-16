@@ -229,6 +229,21 @@ class ScenarioMetric(_Model):
     alert: float | None = None                             # report P(period value > alert); default: historical P90
 
 
+class ScenarioAssumption(_Model):
+    """An assumed input for a what-if run: only records whose value lies in [low, high] are
+    sampled (the simulation is conditioned on the assumption), and ``shift`` is added to every
+    record's value (a stress: "what if costs were 10 higher"). Any field may be left out."""
+    low: float | None = None
+    high: float | None = None
+    shift: float | None = None
+
+    @model_validator(mode="after")
+    def _check(self):
+        if self.low is not None and self.high is not None and self.low > self.high:
+            raise ValueError("low must not exceed high")
+        return self
+
+
 class ScenarioInput(_Model):
     """Any table (pharma batches, fleet days, projects, …) with its TDA regime and ML anomaly score.
 
@@ -247,6 +262,7 @@ class ScenarioInput(_Model):
     period_size: int | None = Field(None, ge=1, le=100_000)   # records per simulated period; default: typical period
     high_anomaly: float = Field(0.6, ge=0, le=1)           # a record at / above this score is "high-risk"
     exclude_anomalies_above: float | None = Field(None, ge=0, le=1)
+    assumptions: dict[str, ScenarioAssumption] | None = None   # metric key → assumed range / shift
     context: dict[str, Any] | None = None
     mapper: dict[str, Any] | None = None                   # same shape as FleetInput.mapper
 
@@ -268,6 +284,7 @@ class ScenarioOverrides(_Model):
     period_size: int | None = Field(None, ge=1, le=100_000)
     exclude_anomalies_above: float | None = Field(None, ge=0, le=1)
     alerts: dict[str, float] | None = None                 # metric key → alert threshold
+    assumptions: dict[str, ScenarioAssumption] | None = None   # metric key → assumed range / shift (replaces all)
 
 
 class RerunRequest(_Model):

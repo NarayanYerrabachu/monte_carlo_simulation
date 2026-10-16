@@ -102,7 +102,8 @@ only take the job id in the path (plus `since` on the live feed). Every response
 | `GET` | `/?job=<id>` | **Live viewer** (fleet and scenario jobs): CortXplorer's Monte Carlo ↗ lands here, and the simulated days / periods play out as a live dashboard |
 | `GET` | `/report?job=<id>` | **Job report**: HTML view of a finished job, with Download PDF / Excel and what-if re-runs (`/fleet?job=` is the same page) |
 | `POST` | `/v1/reports/job` | `{"job_id": "…", "format": "json" \| "pdf" \| "xlsx"}`: the "Monte Carlo with TDA" report of a finished job (result, TDA regimes and the TDA Mapper graph it was sent); files come back as base64 in the JSON |
-| `GET` | `/report` | Job report of the newest finished job (fleet or scenario); `/fleet-demo` is the assumption-based fleet demo with fixed inputs, PDF and Excel |
+| `GET` | `/report` | Job report of the newest finished job (fleet or scenario): key results in words, observed and assumed inputs, distributions, what drives the risk, TDA regimes, recommendations, convergence, backtest; PDF and Excel say the same. `/fleet-demo` is the fleet example with fixed inputs |
+| `POST` | `/v1/jobs/{id}/rerun` | What-if on the same records: `n_sims`, and for scenario jobs `period_size`, `exclude_anomalies_above`, `alerts` (metric → threshold) and `assumptions` (metric → `{low, high, shift}`: only records inside the range are sampled, the shift is added to every record) |
 | `POST` | `/v1/reports/fleet` | Body `{"n": 10000, "seed": 42}`. Returns the fleet-management results (numbers and texts) |
 | `POST` | `/v1/reports/fleet/pdf` | Same body. Returns the report as a PDF, inside the JSON (base64) |
 | `POST` | `/v1/reports/fleet/xlsx` | Same body. Returns the report as Excel, inside the JSON (base64): summary, inputs, distributions, drivers, fleet sizing, convergence, all scenarios |
