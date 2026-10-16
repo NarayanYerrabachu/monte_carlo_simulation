@@ -894,7 +894,8 @@ def _scenario_charts(sc: dict) -> dict[str, Any]:
         ax.barh(labels, vals, color=[BLUE if v >= 0 else ORANGE for v in vals])
         ax.axvline(0, color="#999", lw=0.8)
         ax.set_xlim(-1, 1)
-        ax.set_xlabel("correlation with the number of alerts in a period (or with its high-risk records)")
+        al = sc["config"].get("alert_label") or "alert"
+        ax.set_xlabel(f"correlation with the number of {al}s in a {sc['config']['period_label']} (or with its high-risk records)")
         ax.invert_yaxis()
         fig.tight_layout()
         out["drivers"] = _png(fig)
@@ -1097,7 +1098,7 @@ def _scenario_xlsx(sc: dict, job: dict, wb: Workbook) -> None:
         _widths(ws, [4, 48, 120])
     if s.get("sensitivity"):
         ws = wb.create_sheet("Drivers")
-        _head(ws, 1, ["Input", "Correlation with alerts per period", "Correlation with high-risk records"])
+        _head(ws, 1, ["Input", f"Correlation with {c.get('alert_label') or 'alert'}s per {c['period_label']}", "Correlation with high-risk records"])
         for i, d in enumerate(s["sensitivity"], 2):
             ws.cell(row=i, column=1, value=d["label"])
             ws.cell(row=i, column=2, value=d.get("alerts")).number_format = "0.00"

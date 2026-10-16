@@ -253,6 +253,7 @@ class ScenarioInput(_Model):
     title: str | None = Field(None, max_length=120)        # dataset name, shown in headings
     record_label: str = Field("records", max_length=30)    # what one row is, plural ("batches", "projects")
     period_label: str = Field("period", max_length=30)     # what one simulated unit is ("day", "batch run")
+    alert_label: str = Field("alert", max_length=40)       # an input over its level in a period: "alert", "extreme value"
     record_id: list[str] | None = None
     period: list[str | None] | None = None                 # block key per record (date, batch, …); sampled as blocks
     regime: list[int]                                      # TDA cluster of the record (-1 = noise)

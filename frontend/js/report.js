@@ -155,8 +155,9 @@ function render(sc, job) {
   if (drivers.length) {
     const withAlerts = drivers.some((d) => d.alerts != null);
     $("h-drivers").textContent = `What drives the risk in ${title}`;
-    $("drivers-title").textContent = withAlerts ? `Drivers of alerts per ${period}` : `Drivers of high-risk ${records} per ${period}`;
-    $("drivers-text").textContent = `Correlation of each input's value in a ${period} with ${withAlerts ? "the number of alerts" : `the number of high-risk ${records}`} in that ${period}, over all scenarios. Values near 0 mean the input hardly moves the risk; a negative value means a higher input goes with fewer ${withAlerts ? "alerts" : `high-risk ${records}`}. ` + ((s.text || {}).drivers || "");
+    const al = cfg.alert_label || "alert", als = al.endsWith("s") ? al : `${al}s`;
+    $("drivers-title").textContent = withAlerts ? `What goes with ${als}, per ${period}` : `What goes with high-risk ${records}, per ${period}`;
+    $("drivers-text").textContent = `Correlation of each input's value in a ${period} with ${withAlerts ? `the number of ${als}` : `the number of high-risk ${records}`} in that ${period}, over all scenarios. Values near 0 mean the input hardly moves the risk; a negative value means a higher input goes with fewer ${withAlerts ? als : `high-risk ${records}`}. ` + ((s.text || {}).drivers || "");
     diverging("c-drivers", drivers.map((d) => ({ name: d.label, value: d.alerts != null ? d.alerts : d.high })).sort((a, b) => Math.abs(b.value) - Math.abs(a.value)),
       "Correlation of inputs with the risk per period");
   }

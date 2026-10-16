@@ -376,6 +376,7 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
         "test": "scenario",
         "n_completed": res.n_completed, "stopped_early": res.stopped_early, "elapsed_s": res.elapsed_s,
         "config": {"title": s.title, "period_size": size, "period_label": s.period_label, "record_label": s.record_label,
+                   "alert_label": s.alert_label,
                    "high_anomaly": s.high_anomaly, "exclude_anomalies_above": s.exclude_anomalies_above,
                    "assumptions": {a["key"]: {"low": a["low"], "high": a["high"], "shift": a["shift"]} for a in applied},
                    "n_records": n, "n_pool": int(pool.sum()), "n_periods": len(blocks) if blocks else None,
@@ -401,6 +402,10 @@ def run(section: ScenarioInput, ctx: RunContext) -> dict:
             "context": s.context,
         },
     }
+
+
+def _an(word: str) -> str:
+    return ("an " if word[:1].lower() in "aeiou" else "a ") + word
 
 
 def _val(v: float | None, fmt: str, unit: str | None) -> str:
@@ -453,8 +458,8 @@ def _narrative(s: ScenarioInput, metrics: list[dict], k: dict, regimes: list[dic
                        + (f" ({a['records_removed']:,} {records} outside)" if a["records_removed"] else "")
                        for a in applied) + "." if applied else "")),
         "results": " ".join(f"{f['label']}: {f['value']} ({f['sub']})." for f in findings),
-        "drivers": (((f"An alert is a {s.period_label} in which an input ends above its alert level: the level in the "
-                      f"what-if table, the 90th percentile of its own history unless one was set. "
+        "drivers": (((f"{_an(s.alert_label).capitalize()} is an input ending a {s.period_label} above its level in the "
+                      f"what-if table: the 90th percentile of its own history unless one was set. "
                       if any(d.get("alerts") is not None for d in drivers) else
                       f"A high-risk {records} is one the TDA / ML scoring flags as unusual. ") if drivers else "")
                     + (f"{drivers[0]['label']} moves most with the risk (correlation "

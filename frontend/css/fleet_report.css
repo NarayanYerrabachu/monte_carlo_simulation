@@ -68,7 +68,7 @@ h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; letter-
 h1 { font-size: clamp(34px, 5.4vw, 54px); line-height: 1.02; font-weight: 700; }
 h2 { font-size: 30px; line-height: 1.1; font-weight: 600; }
 h3 { font-size: 20px; line-height: 1.2; font-weight: 600; }
-p { margin: 0; max-width: 68ch; }
+p { margin: 0; }
 .lede { font-size: 19px; color: var(--ink-2); max-width: 60ch; }
 .eyebrow { font-family: var(--display); font-size: 14px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
 .small { font-size: 14px; color: var(--muted); }
@@ -100,7 +100,7 @@ td.range { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tag.given { background: color-mix(in srgb, var(--s1) 14%, transparent); color: var(--accent); }
 .tag.assumed { background: var(--grid); color: var(--ink-2); }
 
-.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; max-width: 76ch; }
+.steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
 
 /* charts */
 .charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
