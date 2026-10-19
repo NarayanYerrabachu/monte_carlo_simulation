@@ -293,7 +293,7 @@ def test_scenario_job_end_to_end_with_reports_and_rerun(client):
     from openpyxl import load_workbook
     wb = load_workbook(io.BytesIO(raw))
     assert "Predictions" in wb.sheetnames and "Recommendations" in wb.sheetnames
-    assert "Drivers" in wb.sheetnames                           # "what drives the risk" is part of every scenario report
+    assert "Risk drivers" in wb.sheetnames                      # "what drives the risk" is part of every scenario report
     first_col = [c.value for c in wb["Predictions"]["A"]]
     assert "Yield" in first_col and any(str(v).startswith("What to expect in the next week") for v in first_col if v)
     assert [c.value for c in wb["Recommendations"]["B"]][2:4] != [None, None]       # at least one recommendation row (logo rows first)

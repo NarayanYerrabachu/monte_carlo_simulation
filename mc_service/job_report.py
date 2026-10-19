@@ -1097,7 +1097,7 @@ def _scenario_xlsx(sc: dict, job: dict, wb: Workbook) -> None:
             ws.cell(row=i, column=3, value=r["text"])
         _widths(ws, [4, 48, 120])
     if s.get("sensitivity"):
-        ws = wb.create_sheet("Drivers")
+        ws = wb.create_sheet("Risk drivers")
         _head(ws, 1, ["Input", f"Correlation with {c.get('alert_label') or 'alert'}s per {c['period_label']}", "Correlation with high-risk records"])
         for i, d in enumerate(s["sensitivity"], 2):
             ws.cell(row=i, column=1, value=d["label"])
