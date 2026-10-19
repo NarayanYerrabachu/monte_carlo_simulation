@@ -247,7 +247,7 @@ function renderScenario(sc) {
   });
 
   renderPredictions(s, cfg);
-  renderDrivers(s, tones);
+  renderDrivers(s, tones, cfg);
   renderRecommendations(s);
   renderContext(s.context || {}, !!s.context);
   const a = s.anomalies, an = $("anoms"); an.replaceChildren();
@@ -330,16 +330,20 @@ function renderWords(s) {
   $("words-results").textContent = t.results || "";
   $("words-inputs").textContent = t.inputs || "";
 }
-function renderDrivers(s, tones) {
+function renderDrivers(s, tones, cfg) {
   const d = (s.sensitivity || []).filter((x) => x.alerts != null || x.high != null);
   $("drivers-card").hidden = !d.length;
   if (!d.length) return;
   const vals = d.map((x) => (x.alerts != null ? x.alerts : x.high));
   const withAlerts = d.some((x) => x.alerts != null);
+  const al = (cfg && cfg.alert_label) || "alert", als = al.endsWith("s") ? al : `${al}s`, period = (cfg && cfg.period_label) || "period";
+  const what = withAlerts ? `${als} per ${period}` : `high-risk ${(cfg && cfg.record_label) || "records"} per ${period}`;
+  $("drivers-card").querySelector("h3").textContent = `What drives the risk in ${(cfg && cfg.title) || "the data"}`;
+  // same reading as the report page: warm = a higher input goes with more risk, blue = with less
   Plotly.react("c-drivers", [{ type: "bar", orientation: "h", y: d.map((x) => x.label), x: vals,
-    marker: { color: vals.map((v) => (v >= 0 ? tones.blue : tones.warm)) }, hovertemplate: "%{y}: %{x:+.2f}<extra></extra>" }],
-    baseLayout(withAlerts ? "correlation with the number of alerts in a period" : "correlation with high-risk records in a period", "",
-      { xaxis: { range: [-1, 1], gridcolor: cssVar("--line"), title: { text: withAlerts ? "correlation with alerts per period" : "correlation with high-risk records" } },
+    marker: { color: vals.map((v) => (v >= 0 ? tones.warm : tones.blue)) }, hovertemplate: "%{y}: %{x:+.2f}<extra></extra>" }],
+    baseLayout(`What goes with ${what}`, "",
+      { xaxis: { range: [-1, 1], gridcolor: cssVar("--line"), title: { text: `correlation with ${what} (orange: more risk, blue: less)` } },
         yaxis: { autorange: "reversed", automargin: true } }), PLOT_CONFIG);
   $("drivers-note").textContent = (s.text || {}).drivers || "";
 }
